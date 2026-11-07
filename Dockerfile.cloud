@@ -1,0 +1,31 @@
+# The archive is produced from explicit source allowlists; no local DB or keys.
+FROM python:3.12-slim-bookworm AS source
+COPY daljam-cloud-source.zip /tmp/source.zip
+RUN python -m zipfile -e /tmp/source.zip /src
+
+FROM node:24-bookworm-slim AS web-build
+WORKDIR /build
+COPY --from=source /src/sleep_frontend/package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY --from=source /src/sleep_frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1 SLEEP_CLOUD_BUILD=1
+RUN npm run build
+
+FROM python:3.12-slim-bookworm AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 daljam
+COPY --from=web-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=source /src/cloud_deploy/free/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+WORKDIR /app
+COPY --from=source --chown=daljam:daljam /src/mobile_backend /app/backend
+COPY --from=source --chown=daljam:daljam /src/cloud_deploy/free/start_runtime.py /app/start_runtime.py
+COPY --from=web-build --chown=daljam:daljam /build/.next/standalone /app/web
+COPY --from=web-build --chown=daljam:daljam /build/.next/static /app/web/.next/static
+COPY --from=web-build --chown=daljam:daljam /build/public /app/web/public
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 NEXT_TELEMETRY_DISABLED=1 \
+    SLEEP_CLOUD=1 SLEEP_DESKTOP_ALARMS=0 NODE_ENV=production
+USER daljam
+EXPOSE 10000
+CMD ["python", "/app/start_runtime.py"]

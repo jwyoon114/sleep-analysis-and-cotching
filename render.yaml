@@ -1,0 +1,22 @@
+# Upload this file, Dockerfile.cloud and daljam-cloud-source.zip to repo root.
+# This blueprint creates only one FREE web service. No paid disk or database.
+services:
+  - type: web
+    name: daljam-web
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile.cloud
+    healthCheckPath: /api/sleep/health
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SLEEP_CLOUD
+        value: "1"
+      - key: SLEEP_DESKTOP_ALARMS
+        value: "0"
+      - key: COACHING_USER_LIMIT_24H
+        value: "3"
+      - key: COACHING_GLOBAL_LIMIT_24H
+        value: "20"
