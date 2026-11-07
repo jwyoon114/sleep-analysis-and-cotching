@@ -128,6 +128,9 @@ def erase_account_rows(db, account_id):
     """Erase only this account, including trash and observations outside sessions."""
     from history_service import erase_coaching_rows
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table in ('sleep_alarm_fires', 'sleep_alarm_settings'):
+        if table in tables:
+            db.execute('DELETE FROM '+table+' WHERE account_id=?',(account_id,))
     for row in list(db.execute("SELECT id FROM sessions WHERE subject=?", (account_id,))):
         erase_session_rows(db, row["id"], account_id)
     if "coaching" in tables:

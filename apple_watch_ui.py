@@ -60,6 +60,8 @@ def login_screen():
 
 
 def render():
+    import sleep_alarms
+    sleep_alarms.start_worker()
     try:
         user = current_user(st.session_state.get("auth_token"))
     except AuthenticationError:
@@ -241,8 +243,8 @@ def render_records(user):
                 st.rerun()
             except Exception as error:
                 code = getattr(error, "code", None)
-                if code in {"credit_balance_exhausted", "insufficient_quota"}:
-                    st.error("OpenAI API 크레딧이 부족합니다. 수면 분석과 기록 저장은 계속 사용할 수 있습니다.")
+                if code:
+                    st.error(coaching_service.api_limit_detail(error)['message'])
                 elif isinstance(error, (ValueError, RuntimeError)):
                     st.error(str(error))
                 else:
@@ -255,6 +257,7 @@ def render_records(user):
         saved = by_id[coaching_id]
         st.caption(f"이 분석에 저장된 코칭 {len(history)}건 · 최신순")
         st.write(saved["coaching"])
+        render_alarm_settings(user, saved)
         with st.expander("코칭 생성 근거 · 사용 모델과 기록 범위"):
             context = saved.get("context")
             if context:
@@ -275,6 +278,39 @@ def render_records(user):
             st.rerun()
     else:
         st.info("이 분석 기록에 저장된 AI 코칭이 없습니다.")
+
+
+def render_alarm_settings(user, saved):
+    import sleep_alarms
+    from datetime import time
+    sleep_alarms.start_worker()
+    settings = sleep_alarms.get_settings(user['id'])
+    proposal = (saved.get('context') or {}).get('alarm_schedule')
+    st.subheader('취침·기상 알람')
+    st.caption('매일 반복 · Windows PC 알람. PC가 켜져 있고 프로그램 서버가 실행 중이어야 합니다. 종료·절전 상태에서는 울리지 않습니다. 브라우저를 닫거나 로그아웃해도 서버가 실행 중이면 저장한 알람이 울립니다.')
+    prefix = 'alarm_' + user['id']
+    if proposal:
+        st.write(f"AI 제안: 취침 {proposal.get('bedtime') or '추가 정보 필요'} · 기상 {proposal.get('wake_time') or '추가 정보 필요'} ({proposal['timezone']})")
+        st.caption(proposal.get('reason',''))
+        if proposal.get('bedtime') and proposal.get('wake_time') and st.button('AI 제안 시간 불러오기',key=prefix+'apply'):
+            st.session_state[prefix+'bed']=time.fromisoformat(proposal['bedtime'])
+            st.session_state[prefix+'wake']=time.fromisoformat(proposal['wake_time'])
+            st.session_state[prefix+'zone']=proposal['timezone']
+    else:
+        st.info('이 코칭에는 제안 시간이 없습니다. 새 코칭을 생성하거나 시간을 직접 입력하세요.')
+    with st.form(prefix+'form'):
+        bed=st.time_input('취침 시간',value=time.fromisoformat(settings['bedtime']),key=prefix+'bed')
+        wake=st.time_input('기상 시간',value=time.fromisoformat(settings['wake_time']),key=prefix+'wake')
+        zone=st.text_input('시간대',value=settings['timezone'],key=prefix+'zone')
+        enabled=st.checkbox('매일 알람 켜기',value=settings['enabled'],disabled=not settings['desktop_available'])
+        if st.form_submit_button('알람 설정 저장'):
+            try:
+                sleep_alarms.save_settings(user['id'],bed.strftime('%H:%M'),wake.strftime('%H:%M'),zone,enabled)
+                st.success('매일 알람을 저장했습니다.' if enabled else '알람을 껐습니다.')
+            except ValueError as error: st.error(str(error))
+    if st.button('알람 소리 시험',key=prefix+'test',disabled=not settings['desktop_available']):
+        sleep_alarms.notify('bedtime')
+        st.info('PC의 알람 창에서 확인을 누르면 소리가 멈춥니다. 소리는 최대 1분 동안 재생됩니다.')
 
 
 def render_comparison(user):

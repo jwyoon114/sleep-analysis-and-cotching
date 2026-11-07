@@ -9,11 +9,23 @@ from pydantic import BaseModel, Field
 import coaching_service
 import history_service
 import backup_policy
+import sleep_alarms
 from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
 
 app = FastAPI(title="나의 수면 리포트 API", version="2.0.0")
+@app.on_event("startup")
+def start_alarm_scheduler():
+    sleep_alarms.start_worker()
+
+class AlarmRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    bedtime: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    wake_time: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    timezone: str = Field(default="Asia/Seoul", max_length=80)
+    enabled: bool
+    coaching_id: str | None = Field(default=None,max_length=80)
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -55,6 +67,23 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "wearable_sleep", "supported_formats": ["Health Data Export Markdown (.md)", "Sleep JSON v1 (.json)", "Health Export Kit JSON v2 (.json)"]}
+
+@app.get("/alarms")
+def alarms(user=Depends(require_user)):
+    return sleep_alarms.get_settings(user['id'])
+
+@app.post("/alarms")
+def save_alarms(request: AlarmRequest,user=Depends(require_user)):
+    try:
+        return sleep_alarms.save_settings(user['id'],request.bedtime,request.wake_time,request.timezone,request.enabled,request.coaching_id)
+    except ValueError as error:
+        raise HTTPException(400,str(error))
+
+@app.post("/alarms/test")
+def test_alarm(user=Depends(require_user)):
+    if not sleep_alarms.desktop_available(): raise HTTPException(400,'이 PC에서는 알람을 사용할 수 없습니다.')
+    sleep_alarms.notify('bedtime')
+    return {'status':'started'}
 
 
 @app.post("/auth/register", status_code=201)
@@ -193,7 +222,7 @@ def coach(request: CoachingRequest, user=Depends(require_user)):
     try:
         return coaching_service.generate(user["id"], request.analysis_id, request.model_dump(exclude={"analysis_id"}))
     except RateLimitError as error:
-        raise HTTPException(429, {"code": error.code or "rate_limit_error", "message": "OpenAI API 잔액·사용 한도 또는 요청 속도를 확인하세요. 수면 기록은 저장되어 있습니다."})
+        raise HTTPException(429, coaching_service.api_limit_detail(error))
     except APIConnectionError:
         raise HTTPException(502, "AI 서버 연결을 확인하세요. 수면 기록은 저장되어 있습니다.")
     except APIStatusError:

@@ -2,6 +2,7 @@
 
 저장소 루트의 `.py` 파일은 현재 사용하는 웨어러블 수면 분석·AI 코칭 프로그램입니다.
 최근 추가한 분석 직후 시간별 수면 단계 그래프와 과거 기록 그래프가 포함되어 있습니다.
+매일 반복 취침·기상 PC 알람과 AI 제안 시간 불러오기, API 오류별 안내도 포함합니다.
 이 파일들과 `requirements-mobile.txt`를 같은 폴더에 두고 실행하세요.
 
 ## 설치 및 실행 (Windows, Python 3.11 이상)
@@ -29,5 +30,6 @@ AI 코칭에는 별도 API 사용료가 발생하며, 키 없이도 기록 분�
 - `api.py`: 모바일 및 웹 프론트엔드용 API
 - `launch_sleep_app.py`, `share_sleep_app.py`: Windows 실행·무료 공유 도구
 
-기존 ZIP은 이전 스냅샷입니다. 최신 Python 프로그램은 루트의 소스 파일을 사용하세요.
+알람은 Windows PC와 프로그램 서버가 켜져 있을 때만 해당 PC에서 울립니다. 휴대폰 알람이 아닙니다.
+전체 프로젝트는 최신 `sleep-coach-source.zip`, Windows 웹앱 설치는 `daljam-windows-setup.zip`을 참고하세요.
 Next.js 프론트엔드와 Flutter 앱은 별도 프로젝트이며 이 Python 실행 절차에 필요하지 않습니다.
