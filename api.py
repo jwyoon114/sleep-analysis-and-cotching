@@ -2,7 +2,7 @@
 from typing import Literal
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
@@ -10,6 +10,7 @@ import coaching_service
 import history_service
 import backup_policy
 import sleep_alarms
+import health_sync
 from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
@@ -53,6 +54,14 @@ class AccountDeleteRequest(BaseModel):
     model_config = {"extra": "forbid"}
     current_password: str = Field(min_length=1, max_length=128)
     confirmation: Literal["계정 삭제"]
+
+
+class HealthConnectionRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    provider: Literal["healthkit", "health_connect"]
+    source_id: str = Field(min_length=1, max_length=300)
+    source_name: str = Field(min_length=1, max_length=120)
+    auto_coach: bool = False
 
 
 def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
@@ -233,3 +242,45 @@ def coach(request: CoachingRequest, user=Depends(require_user)):
         raise HTTPException(503, str(error))
     except RuntimeError as error:
         raise HTTPException(502, str(error))
+
+
+# Native apps use a revocable sync-only token, separate from web login.
+@app.get("/watch/health/connection")
+def health_connection(user=Depends(require_user)):
+    return health_sync.status(user["id"])
+
+
+@app.post("/watch/health/connection")
+def connect_health(request: HealthConnectionRequest, user=Depends(require_user)):
+    return health_sync.pair(user["id"], **request.model_dump())
+
+
+@app.delete("/watch/health/connection")
+def disconnect_health(user=Depends(require_user)):
+    health_sync.disconnect(user["id"])
+    return {"status": "disconnected"}
+
+
+@app.post("/mobile/health-sync")
+def sync_health(
+    snapshot: dict,
+    tasks: BackgroundTasks,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    try:
+        result = health_sync.synchronize(
+            credentials.credentials if credentials else None, snapshot
+        )
+        result["advice_queued"] = bool(
+            result.pop("auto_coach") and result["added_sessions"] > 0
+        )
+        if result["advice_queued"]:
+            tasks.add_task(
+                health_sync.auto_advice, result["account_id"], result["analysis_ids"]
+            )
+        result.pop("account_id")
+        return result
+    except AuthenticationError as error:
+        raise HTTPException(401, str(error))
+    except (ValueError, KeyError, TypeError, OverflowError) as error:
+        raise HTTPException(400, "건강 기록을 확인하세요: " + str(error))

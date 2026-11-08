@@ -119,6 +119,8 @@ def update_account(account_id, current_password, new_username=None, new_password
                     hashed = password_hash(new_password, salt) if new_password is not None else row["password_hash"]
                     db.execute("UPDATE accounts SET username=?, password_hash=?, salt=? WHERE id=?", (username, hashed, salt, account_id))
                     db.execute("DELETE FROM auth_tokens WHERE account_id=?", (account_id,))
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='health_connections'").fetchone():
+                        db.execute("DELETE FROM health_connections WHERE account_id=?", (account_id,))
         if error is not None:
             raise error
     return {"id": account_id, "username": username, "reauthentication_required": True}
