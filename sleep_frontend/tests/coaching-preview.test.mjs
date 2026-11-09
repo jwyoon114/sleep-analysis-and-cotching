@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MBTI_TYPES, CHARACTERS, COACHING_PRESETS, PREVIEW_ANALYSIS, PREVIEW_CONTENT,
-  createCoachingPreview, getCharacter, isMbtiType,
+  createCoachingPreview, getCharacter, getCoachingPreset, isMbtiType,
 } from "../src/lib/coaching-preview.ts";
 
 const expectedTypes = [
@@ -94,6 +94,14 @@ test("changing an animal does not select or alter an MBTI preset", () => {
   assert.deepEqual(createCoachingPreview("INFP"), before);
   assert.deepEqual(CHARACTERS.map(c => c.id), ["cat", "rabbit", "bear", "owl"]);
   assert.equal(new Set(CHARACTERS.map(c => c.emoji)).size, 4);
+});
+
+test("saved advice and preview share framing without fictional facts or specific actions", () => {
+  for (const type of [null, ...MBTI_TYPES]) {
+    const preset = getCoachingPreset(type);
+    assert.strictEqual(preset, createCoachingPreview(type).preset);
+    assert.doesNotMatch([preset.opening, preset.closing].join(" "), /가상|\d|두 제안|두 가지|휴식 활동/);
+  }
 });
 
 test("unselected MBTI has a neutral preview with the same core information", () => {

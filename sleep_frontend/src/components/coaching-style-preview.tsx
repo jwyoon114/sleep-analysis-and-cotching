@@ -1,17 +1,52 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId } from "react";
 import { ArrowDown, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import {
-  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter,
+  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter, getCoachingPreset,
   type CharacterId, type MbtiType,
 } from "@/lib/coaching-preview";
 import styles from "./coaching-style-preview.module.css";
 
-export default function CoachingStylePreview() {
+type CoachingStyle = {
+  mbti: MbtiType | null;
+  characterId: CharacterId;
+};
+
+function CoachingCharacter({ characterId }: Pick<CoachingStyle, "characterId">) {
+  const character = getCharacter(characterId);
+  return (
+    <figure className={styles.character} data-character={characterId}>
+      <span role="img" aria-label={"선택한 캐릭터: " + character.name}>{character.emoji}</span>
+      <figcaption>{character.name}</figcaption>
+    </figure>
+  );
+}
+
+export function CoachingAdvice({ body, mbti, characterId }: CoachingStyle & { body: string }) {
+  const preset = getCoachingPreset(mbti);
+  return (
+    <article aria-label="수면 조언">
+      <div className={styles.introduction}>
+        <CoachingCharacter characterId={characterId} />
+        <div>
+          <h3>{preset.label}</h3>
+          <p>{preset.opening}</p>
+        </div>
+      </div>
+      <p className="coach-text">{body}</p>
+      <p className={styles.closing}>{preset.closing}</p>
+    </article>
+  );
+}
+
+type PreviewProps = CoachingStyle & {
+  onMbtiChange: (mbti: MbtiType | null) => void;
+  onCharacterChange: (characterId: CharacterId) => void;
+};
+
+export default function CoachingStylePreview({ mbti, characterId, onMbtiChange, onCharacterChange }: PreviewProps) {
   const id = useId();
-  const [mbti, setMbti] = useState<MbtiType | null>(null);
-  const [characterId, setCharacterId] = useState<CharacterId>("cat");
   const preview = createCoachingPreview(mbti);
   const character = getCharacter(characterId);
   const RecommendationList = preview.expression.listStyle === "steps" ? "ol" : "ul";
@@ -24,14 +59,14 @@ export default function CoachingStylePreview() {
           <h2 id={id + "-title"}>나에게 편한 말투를 찾아봐요</h2>
           <p>같은 가상 기록, 다른 표현. 함께할 동물도 따로 골라보세요.</p>
         </div>
-        <span className={styles.temporary}>저장되지 않는 미리보기</span>
+        <span className={styles.temporary}>현재 이용 중에만 적용</span>
       </div>
 
       <div className={styles.layout}>
         <div className={styles.controls}>
           <fieldset className={styles.fieldset} aria-describedby={id + "-hypothesis"}>
             <legend><span className={styles.step}>01</span> MBTI 말투 선택</legend>
-            <p className={styles.hint}>유형을 선택하면 미리보기 조언의 표현이 바뀌어요.</p>
+            <p className={styles.hint}>고른 말투는 미리보기와 나의 수면 조언에 함께 적용돼요.</p>
             <div className={styles.mbtiGrid}>
               {MBTI_TYPES.map(type => (
                 <label key={type} className={styles.mbtiOption}>
@@ -41,7 +76,7 @@ export default function CoachingStylePreview() {
                     name={id + "-mbti"}
                     value={type}
                     checked={mbti === type}
-                    onChange={() => setMbti(type)}
+                    onChange={() => onMbtiChange(type)}
                     aria-label={type + " · " + COACHING_PRESETS[type].label}
                   />
                   <span>{type}</span>
@@ -50,7 +85,7 @@ export default function CoachingStylePreview() {
             </div>
             <div className={styles.selection}>
               <span>{mbti ? mbti + " · " + preview.preset.label : "미선택 · 기본 말투로 보고 있어요"}</span>
-              {mbti && <button type="button" onClick={() => setMbti(null)}><RotateCcw size={12} aria-hidden="true" />말투 초기화</button>}
+              {mbti && <button type="button" onClick={() => onMbtiChange(null)}><RotateCcw size={12} aria-hidden="true" />말투 초기화</button>}
             </div>
             <p id={id + "-hypothesis"} className={styles.hypothesis}>
               MBTI별 말투는 달잠의 표현 스타일 설계 가설이에요.
@@ -70,7 +105,7 @@ export default function CoachingStylePreview() {
                     name={id + "-character"}
                     value={item.id}
                     checked={characterId === item.id}
-                    onChange={() => setCharacterId(item.id)}
+                    onChange={() => onCharacterChange(item.id)}
                     aria-label={item.name}
                   />
                   <span><span aria-hidden="true">{item.emoji}</span>{item.name}</span>
@@ -80,8 +115,8 @@ export default function CoachingStylePreview() {
           </fieldset>
 
           <p className={styles.sessionNote}>
-            선택은 이 화면에서만 유지돼요. 화면을 벗어나거나 새로고침하면 초기화됩니다.
-            유료 AI를 호출하지 않으며, 내 기록과 저장된 AI 조언은 바뀌지 않아요.
+            선택은 현재 이용 중에 유지되며, 새로고침하거나 로그아웃하면 초기화돼요.
+            말투와 캐릭터를 바꾸면 화면 표현만 바뀌어요.
           </p>
           <a className={styles.previewJump} href={"#" + id + "-preview"}>
             미리보기 조언 보기 <ArrowDown size={14} aria-hidden="true" />
@@ -94,10 +129,7 @@ export default function CoachingStylePreview() {
             <span className={styles.mbtiBadge}>{mbti || "기본 말투"}</span>
           </header>
           <div className={styles.introduction}>
-            <figure className={styles.character} data-character={characterId}>
-              <span role="img" aria-label={"선택한 캐릭터: " + character.name}>{character.emoji}</span>
-              <figcaption>{character.name}</figcaption>
-            </figure>
+            <CoachingCharacter characterId={characterId} />
             <div>
               <h3 id={id + "-preview-title"}>{preview.preset.label}</h3>
               <p data-testid="preview-opening">{preview.preset.opening}</p>
