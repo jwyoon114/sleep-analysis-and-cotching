@@ -140,12 +140,15 @@ def _regularity(days: dict[date, list[_Session]], uncertain_start: bool) -> dict
 def analyze_sleep_patterns(
     selected_record: Mapping[str, object],
     records: Iterable[Mapping[str, object]],
+    *,
+    include_limitation_ids: bool = False,
 ) -> dict:
     """Compare two seven-day windows ending on the selected sleep day.
 
     The selected session is included once. Sleep days follow the sync
     convention of local noon to noon. The selected end time bounds the
     observations, including when another session shares its sleep day.
+    Callers preparing a presentation can request the corresponding limitation IDs.
     """
     selected_start = _timestamp(selected_record.get("start"))
     cutoff = _timestamp(selected_record.get("end"))
@@ -156,7 +159,7 @@ def analyze_sleep_patterns(
         or reference != _night_day(selected_start)
         or _window_minutes(selected_start, cutoff) is None
     ):
-        return {
+        result = {
             "reference_day": None,
             "observation": {
                 "recent": None,
@@ -170,6 +173,9 @@ def analyze_sleep_patterns(
             "comparison": {"status": "invalid_reference", "average_difference_minutes": None},
             "limitations": ["선택한 기록의 날짜와 시간 구간을 확인해 주세요."],
         }
+        if include_limitation_ids:
+            result["limitation_ids"] = ["invalid_reference"]
+        return result
 
     recent_start = reference - timedelta(days=6)
     previous_start = reference - timedelta(days=13)
@@ -239,28 +245,33 @@ def analyze_sleep_patterns(
     )
     regularity = _regularity(recent_days, uncertain_start)
 
-    limitations = ["평균은 유효한 기록이 있는 날의 기기 추정 수면 시간만 사용합니다."]
+    limitations = [
+        ("valid_days_device_estimates", "평균은 유효한 기록이 있는 날의 기기 추정 수면 시간만 사용합니다."),
+    ]
     if undated_record or any(previous_start <= day <= reference for day in unusable_days):
-        limitations.append("날짜, 시간 구간 또는 수면 시간을 확인할 수 없는 기록은 집계에서 제외했습니다.")
+        limitations.append(("unusable_records_excluded", "날짜, 시간 구간 또는 수면 시간을 확인할 수 없는 기록은 집계에서 제외했습니다."))
     if any(previous_start <= day <= reference for day in ambiguous_days):
-        limitations.append("기록이 겹치거나 같은 기록 ID의 값이 다른 날은 집계에서 제외했습니다.")
+        limitations.append(("ambiguous_records_excluded", "기록이 겹치거나 같은 기록 ID의 값이 다른 날은 집계에서 제외했습니다."))
     if not enough_days:
-        limitations.append("두 기간에 각각 유효 기록일이 3일 이상 있어야 평균 차이를 표시합니다.")
+        limitations.append(("insufficient_comparison_days", "두 기간에 각각 유효 기록일이 3일 이상 있어야 평균 차이를 표시합니다."))
     if regularity["status"] == "mixed_timezones":
-        limitations.append("최근 기록의 시간대 또는 UTC 오프셋이 달라 시작 시각 변동을 보류했습니다.")
+        limitations.append(("mixed_timezones", "최근 기록의 시간대 또는 UTC 오프셋이 달라 시작 시각 변동을 보류했습니다."))
     elif regularity["status"] == "unreliable_start":
-        limitations.append("날짜별 시작 시각을 하나씩 신뢰하기 어려워 시작 시각 변동을 보류했습니다.")
+        limitations.append(("unreliable_start", "날짜별 시작 시각을 하나씩 신뢰하기 어려워 시작 시각 변동을 보류했습니다."))
     elif regularity["status"] == "insufficient_days":
-        limitations.append("시작 시각 변동을 계산하려면 최근 유효 기록일이 2일 이상 필요합니다.")
+        limitations.append(("insufficient_start_days", "시작 시각 변동을 계산하려면 최근 유효 기록일이 2일 이상 필요합니다."))
     else:
-        limitations.append("시작 시각 변동은 기기 기록의 시작 시각 범위입니다.")
+        limitations.append(("device_start_range", "시작 시각 변동은 기기 기록의 시작 시각 범위입니다."))
 
-    return {
+    result = {
         "reference_day": reference.isoformat(),
         "observation": {"recent": recent, "previous": previous, "regularity": regularity},
         "comparison": {
             "status": "available" if enough_days else "insufficient_days",
             "average_difference_minutes": difference,
         },
-        "limitations": limitations,
+        "limitations": [message for _, message in limitations],
     }
+    if include_limitation_ids:
+        result["limitation_ids"] = [identifier for identifier, _ in limitations]
+    return result

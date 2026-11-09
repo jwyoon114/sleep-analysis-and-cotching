@@ -71,8 +71,39 @@ class FreeCoachingTests(unittest.TestCase):
             "status": "available", "average_difference_minutes": 40,
         })
 
+    def test_presentation_uses_the_same_observation_and_pattern_values(self):
+        habits = {"caffeine": "있음"}
+        legacy = generate_free_coaching(self.selected, self.history, habits)
+        result = generate_free_coaching(
+            self.selected, self.history, habits, include_presentation=True,
+        )
+        presentation = result.pop("presentation")
+        self.assertEqual(result, legacy)
+        self.assertEqual(presentation, {
+            "version": 1,
+            "observation": {
+                "id": "device_sleep_estimate",
+                "asleep": {"valid": True, "minutes": 420, "display": "7시간"},
+                "awake": {"valid": True, "minutes": 30, "display": "30분"},
+            },
+            "patterns": {
+                "recent": {"valid_days": 3, "average_asleep_minutes": 400, "average_display": "400분"},
+                "previous": {"valid_days": 3, "average_asleep_minutes": 360, "average_display": "360분"},
+                "comparison": {
+                    "status": "available", "average_difference_minutes": 40, "difference_display": "+40분",
+                },
+                "regularity": {"status": "available", "start_spread_minutes": 20, "spread_display": "20분"},
+            },
+            "suggestion_id": "track_caffeine_timing",
+            "limitation_ids": [
+                "single_device_estimate", "valid_days_device_estimates", "device_start_range",
+            ],
+        })
+
     def test_withholds_difference_with_insufficient_history(self):
-        result = generate_free_coaching(self.selected, self.history[-1:], None)
+        result = generate_free_coaching(
+            self.selected, self.history[-1:], None, include_presentation=True,
+        )
 
         self.assertEqual(result["patterns"]["recent"]["valid_days"], 2)
         self.assertEqual(result["patterns"]["previous"]["valid_days"], 0)
@@ -81,6 +112,30 @@ class FreeCoachingTests(unittest.TestCase):
             "status": "insufficient_days", "average_difference_minutes": None,
         })
         self.assertTrue(any("3일 이상" in note for note in result["limitations"]))
+        presentation = result["presentation"]
+        self.assertEqual(presentation["patterns"]["previous"], {
+            "valid_days": 0, "average_asleep_minutes": None, "average_display": None,
+        })
+        self.assertEqual(presentation["patterns"]["comparison"], {
+            "status": "insufficient_days", "average_difference_minutes": None, "difference_display": None,
+        })
+        self.assertIn("insufficient_comparison_days", presentation["limitation_ids"])
+
+    def test_zero_and_negative_differences_have_signed_display_values(self):
+        for previous_average, difference, display in [(400, 0, "+0분"), (420, -20, "-20분")]:
+            with self.subTest(difference=difference):
+                history = [
+                    session(day, previous_average)
+                    for day in ("2026-11-01", "2026-11-04", "2026-11-07")
+                ] + self.history[-2:]
+                result = generate_free_coaching(
+                    self.selected, history, {}, include_presentation=True,
+                )
+                self.assertEqual(result["presentation"]["patterns"]["comparison"], {
+                    "status": "available",
+                    "average_difference_minutes": difference,
+                    "difference_display": display,
+                })
 
     def test_missing_lifestyle_answers_use_only_reported_habits(self):
         result = generate_free_coaching(self.selected, [], {"regularity": "자주 달라짐"})
@@ -91,8 +146,55 @@ class FreeCoachingTests(unittest.TestCase):
         self.assertNotEqual(result["suggestion"], empty["suggestion"])
         self.assertEqual(empty, generate_free_coaching(self.selected, [], None))
 
+    def test_presentation_suggestion_follows_existing_lifestyle_priority(self):
+        cases = [
+            ({"caffeine": "있음", "regularity": "자주 달라짐", "satisfaction": "나쁨"}, "track_caffeine_timing"),
+            ({"caffeine": "미입력", "regularity": "자주 달라짐", "satisfaction": "나쁨"}, "track_bed_and_wake_times"),
+            ({"caffeine": "없음", "satisfaction": "나쁨"}, "track_morning_rest"),
+            ({"caffeine": "미입력"}, "compare_daily_sleep"),
+        ]
+        for lifestyle, suggestion_id in cases:
+            with self.subTest(suggestion_id=suggestion_id):
+                result = generate_free_coaching(self.selected, [], lifestyle, include_presentation=True)
+                self.assertEqual(result["presentation"]["suggestion_id"], suggestion_id)
+
+    def test_presentation_marks_omitted_measurements_unavailable(self):
+        unavailable = {"valid": False, "minutes": None, "display": None}
+        for awake in (None, 100):
+            with self.subTest(awake=awake):
+                selected = dict(self.selected, asleep_minutes=419.5, awake_minutes=awake, unrecorded_minutes=5)
+                result = generate_free_coaching(selected, [], {}, include_presentation=True)
+                presentation = result["presentation"]
+                self.assertEqual(presentation["observation"]["asleep"], {
+                    "valid": True, "minutes": 419.5, "display": "약 7시간",
+                })
+                self.assertEqual(presentation["observation"]["awake"], unavailable)
+                self.assertNotIn("각성으로 분류한 시간", result["observation"])
+                self.assertIn("unrecorded_segments", presentation["limitation_ids"])
+
+        selected = dict(self.selected, asleep_minutes=None)
+        result = generate_free_coaching(selected, [], {"caffeine": "있음"}, include_presentation=True)
+        presentation = result["presentation"]
+        self.assertEqual(presentation["observation"], {
+            "id": "sleep_duration_unavailable", "asleep": unavailable, "awake": unavailable,
+        })
+        self.assertEqual(presentation["suggestion_id"], "check_device_record")
+        self.assertIn("sleep_duration_unavailable", presentation["limitation_ids"])
+        self.assertIn("unusable_records_excluded", presentation["limitation_ids"])
+
+    def test_presentation_withholds_start_range_across_timezones(self):
+        history = self.history[:-1] + [dict(self.history[-1], timezone="Asia/Tokyo")]
+        result = generate_free_coaching(self.selected, history, {}, include_presentation=True)
+        presentation = result["presentation"]
+        self.assertEqual(presentation["patterns"]["regularity"], {
+            "status": "mixed_timezones", "start_spread_minutes": None, "spread_display": None,
+        })
+        self.assertIn("mixed_timezones", presentation["limitation_ids"])
+
     def test_missing_reference_times_keep_the_single_record_observation(self):
-        result = generate_free_coaching({"asleep_minutes": 380}, self.history, {})
+        result = generate_free_coaching(
+            {"asleep_minutes": 380}, self.history, {}, include_presentation=True,
+        )
 
         self.assertIn("6시간 20분", result["observation"])
         self.assertIsNone(result["patterns"]["reference_day"])
@@ -100,6 +202,13 @@ class FreeCoachingTests(unittest.TestCase):
         self.assertEqual(result["patterns"]["comparison"], {
             "status": "invalid_reference", "average_difference_minutes": None,
         })
+        presentation = result["presentation"]
+        self.assertIsNone(presentation["patterns"]["recent"])
+        self.assertIsNone(presentation["patterns"]["previous"])
+        self.assertEqual(presentation["patterns"]["regularity"], {
+            "status": "invalid_reference", "start_spread_minutes": None, "spread_display": None,
+        })
+        self.assertIn("invalid_reference", presentation["limitation_ids"])
 
     def test_absent_inputs_return_record_check_without_comparison_values(self):
         result = generate_free_coaching(None, None, None)

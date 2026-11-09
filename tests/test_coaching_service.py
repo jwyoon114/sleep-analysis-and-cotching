@@ -16,9 +16,11 @@ from fastapi import BackgroundTasks, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 import api
+import backup_policy
 import coaching_service
 import health_records
 import health_sync
+import history_service
 from coaching_free import generate_free_coaching
 
 
@@ -102,35 +104,79 @@ class CoachingServiceTests(unittest.TestCase):
             db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)",
                        ("legacy-id", self.user["id"], sid, "가상 과거 조언", "{}", "2025-11-15"))
             db.execute("INSERT INTO coaching_context VALUES(?,?)", ("legacy-id", json.dumps(old_context)))
-        old = coaching_service.list_coaching(self.user["id"], sid)[0]
+            db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)",
+                       ("old-free-id", self.user["id"], sid, "가상 과거 무료 조언", "{}", "2025-11-16"))
+            db.execute("INSERT INTO coaching_context VALUES(?,?)", ("old-free-id", json.dumps({
+                "engine": "rules", "prompt_version": "rules-v1", "record_ids": [sid],
+            })))
+        old = coaching_service.list_coaching(self.user["id"], sid)
+        for item in old:
+            self.assertNotIn("presentation", item["context"])
         request = api.CoachingRequest(analysis_id=sid, caffeine="있음")
         with self.assertRaises(HTTPException) as error:
             api.coach(request, user={"id": "another-account"})
+        self.assertEqual(error.exception.status_code, 404)
+        with self.assertRaises(HTTPException) as error:
+            api.saved_coaching(sid, user={"id": "another-account"})
         self.assertEqual(error.exception.status_code, 404)
 
         result = api.coach(request, user=self.user)
 
         self.assertEqual(set(result), {"id", "analysis_id", "coaching", "created_at", "context"})
         self.assertEqual(result["analysis_id"], sid)
-        self.assertIn("수면으로 분류한 시간은 7시간", result["coaching"])
-        self.assertIn("최근 7일 · 유효 기록 3일 · 기록일 평균 400분", result["coaching"])
-        self.assertIn("직전 7일 · 유효 기록 3일 · 기록일 평균 360분", result["coaching"])
-        self.assertIn("평균 차이(최근 − 직전) +40분", result["coaching"])
-        self.assertIn("기기 기록의 시작 시각 범위 20분", result["coaching"])
-        self.assertIn("카페인을 섭취한 시각", result["coaching"])
-        self.assertIn("데이터 한계", result["coaching"])
+        self.assertEqual(result["coaching"], (
+            "선택 기록\n기기에서 수면으로 분류한 시간은 7시간입니다. 각성으로 분류한 시간은 30분입니다.\n\n"
+            "수면 패턴\n최근 7일 · 유효 기록 3일 · 기록일 평균 400분\n"
+            "직전 7일 · 유효 기록 3일 · 기록일 평균 360분\n"
+            "평균 차이(최근 − 직전) +40분\n기기 기록의 시작 시각 범위 20분\n\n"
+            "실천 제안\n카페인을 섭취한 시각을 적고, 며칠 동안의 수면 기록과 함께 살펴보세요.\n\n"
+            "데이터 한계\n선택 기록 · 기기가 추정한 한 건의 기록입니다. "
+            "평소 수면 패턴이나 변화의 원인을 판단하기에는 정보가 부족합니다.\n"
+            "평균은 유효한 기록이 있는 날의 기기 추정 수면 시간만 사용합니다.\n"
+            "시작 시각 변동은 기기 기록의 시작 시각 범위입니다."
+        ))
         context = result["context"]
         self.assertEqual(context["engine"], "rules")
         self.assertEqual(context["record_count"], 6)
         self.assertEqual(context["window_end"], selected["end"])
         self.assertEqual(context["input_summary"]["recorded_period"]["comparison"]["average_difference_minutes"], 40)
         self.assertNotIn("alarm_schedule", context)
+        presentation = context["presentation"]
+        self.assertEqual(presentation["version"], 1)
+        self.assertEqual(presentation["suggestion_id"], "track_caffeine_timing")
+        with closing(health_records.connect(self.db)) as db:
+            row = db.execute(
+                "SELECT c.text, ctx.payload FROM coaching c JOIN coaching_context ctx ON ctx.coaching_id=c.id WHERE c.id=?",
+                (result["id"],),
+            ).fetchone()
+        self.assertEqual(row["text"], result["coaching"])
+        self.assertEqual(json.loads(row["payload"]), context)
         history = api.saved_coaching(sid, user=self.user)["history"]
         self.assertEqual(history[0]["id"], result["id"])
         self.assertEqual(history[0]["coaching"], result["coaching"])
         self.assertEqual(history[0]["context"], context)
-        self.assertEqual(history[1], old)
+        self.assertEqual(history[1:], old)
         self.assertEqual(health_records.get_owned_session(sid, self.user["id"]), selected)
+
+    def test_purging_a_reference_removes_presentation_but_preserves_the_saved_text(self):
+        sid = self.add_session("2025-11-14", 420)["analysis_id"]
+        reference = self.add_session("2025-11-13", 380)["analysis_id"]
+        account_id = self.user["id"]
+        original = coaching_service.generate(account_id, sid, {}, self.db)
+        self.assertEqual(original["context"]["record_ids"], [sid, reference])
+        self.assertEqual(original["context"]["presentation"]["version"], 1)
+        backup_policy.create_backup(self.db)
+        snapshot, = backup_policy.managed_backups(self.db)
+
+        self.assertTrue(health_records.delete_session(reference, account_id, self.db))
+        self.assertTrue(history_service.purge_record("session", reference, account_id, self.db))
+
+        for path in (self.db, snapshot):
+            with self.subTest(backup=path == snapshot):
+                saved, = coaching_service.list_coaching(account_id, sid, path)
+                self.assertEqual(saved["id"], original["id"])
+                self.assertEqual(saved["coaching"], original["coaching"])
+                self.assertIsNone(saved["context"])
 
     def test_sync_background_task_generates_free_coaching_once(self):
         token = health_sync.pair(
@@ -157,6 +203,7 @@ class CoachingServiceTests(unittest.TestCase):
         saved = coaching_service.list_coaching(self.user["id"], synced["analysis_ids"][0])
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["context"]["engine"], "rules")
+        self.assertEqual(saved[0]["context"]["presentation"]["version"], 1)
         self.assertIn("수면으로 분류한 시간은 8시간", saved[0]["coaching"])
 
     def test_streamlit_form_uses_the_same_service_and_reads_saved_context(self):
@@ -195,8 +242,8 @@ class CoachingServiceTests(unittest.TestCase):
         selected = self.add_session("2025-11-14", 420)
         earlier = self.add_session("2025-11-13", 380)
 
-        def generate_then_trash(*args):
-            result = generate_free_coaching(*args)
+        def generate_then_trash(*args, **kwargs):
+            result = generate_free_coaching(*args, **kwargs)
             health_records.delete_session(earlier["analysis_id"], self.user["id"], self.db)
             return result
 
@@ -219,6 +266,7 @@ class CoachingServiceTests(unittest.TestCase):
             )
             result = coaching_service.generate(self.user["id"], selected["analysis_id"], {})
         self.assertEqual(result["coaching"], "가상 레거시 조언")
+        self.assertNotIn("presentation", result["context"])
         self.assertEqual(result["context"]["alarm_schedule"]["bedtime"], "23:00")
         self.assertFalse(create.call_args.kwargs["store"])
         create.assert_called_once()

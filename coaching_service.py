@@ -191,6 +191,7 @@ def _rule_context(result, session, recent, lifestyle):
         "engine": "rules",
         "model": "규칙 기반",
         "prompt_version": "rules-v1",
+        "presentation": result["presentation"],
         "input_summary": {
             "selected_record": summary(session),
             "recent_records": [summary(record) for record in recent],
@@ -223,7 +224,7 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     else:
         recent = _rule_history(session, history)
         reserve_coaching_request(account_id, db_path)
-        result = generate_free_coaching(session, recent, lifestyle)
+        result = generate_free_coaching(session, recent, lifestyle, include_presentation=True)
         answer = _rule_answer(result)
         context = _rule_context(result, session, recent, lifestyle)
 
