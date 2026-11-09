@@ -117,7 +117,7 @@ export default function SleepApp() {
   if(!user)return <Auth onLogin={u=>{setError("");setUser(u);}} onDemo={()=>{setDemo(true);setUser({id:"demo",username:"체험"});setError("");}} error={error} status={notice}/>;
 
   const recordSelector=<select aria-label="분석할 수면 기록" value={selected} onChange={e=>setSelected(e.target.value)}>{records.map(r=><option key={r.analysis_id} value={r.analysis_id}>{shortDate(r.start)} · {clock(r.start)} · {minutes(r.asleep_minutes)}</option>)}</select>;
-  const coachContent=<>{coachLoading?<Busy text="저장된 코칭 불러오는 중"/>:saved?<><CoachingAdvice body={saved.coaching} mbti={mbti} characterId={characterId}/><div className="coach-timestamp"><Sparkles size={13}/>{demo?"화면 체험용 예시":new Date(saved.created_at).toLocaleString("ko-KR")+"에 생성"}</div></>:<div className="coach-placeholder"><Sparkles size={29}/><h3>나의 밤에, 다정한 조언 하나</h3><p>생활습관과 수면 기록을 함께 살펴보고<br/>나에게 맞는 코칭을 받아 보세요.</p></div>}</>;
+  const coachContent=<>{coachLoading?<Busy text="저장된 코칭 불러오는 중"/>:saved?<><CoachingAdvice body={saved.coaching} context={saved.context} mbti={mbti} characterId={characterId}/><div className="coach-timestamp"><Sparkles size={13}/>{demo?"화면 체험용 예시":new Date(saved.created_at).toLocaleString("ko-KR")+"에 생성"}</div></>:<div className="coach-placeholder"><Sparkles size={29}/><h3>나의 밤에, 다정한 조언 하나</h3><p>생활습관과 수면 기록을 함께 살펴보고<br/>나에게 맞는 코칭을 받아 보세요.</p></div>}</>;
 
   return <div className="app-shell">
     {mobile&&<div className="mobile-scrim" onClick={()=>setMobile(false)}/>}

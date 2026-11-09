@@ -2,10 +2,12 @@
 
 import { useId } from "react";
 import { ArrowDown, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
+import { renderCoachingBody } from "@/lib/coaching-body";
 import {
-  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter, getCoachingPreset,
+  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter, getCoachingPreset, getCoachingTone,
   type CharacterId, type MbtiType,
 } from "@/lib/coaching-preview";
+import type { Coaching } from "@/lib/sleep";
 import styles from "./coaching-style-preview.module.css";
 
 type CoachingStyle = {
@@ -23,7 +25,10 @@ function CoachingCharacter({ characterId }: Pick<CoachingStyle, "characterId">) 
   );
 }
 
-export function CoachingAdvice({ body, mbti, characterId }: CoachingStyle & { body: string }) {
+export function CoachingAdvice({ body, context, mbti, characterId }: CoachingStyle & {
+  body: string;
+  context?: Coaching["context"];
+}) {
   const preset = getCoachingPreset(mbti);
   return (
     <article aria-label="수면 조언">
@@ -34,7 +39,7 @@ export function CoachingAdvice({ body, mbti, characterId }: CoachingStyle & { bo
           <p>{preset.opening}</p>
         </div>
       </div>
-      <p className="coach-text">{body}</p>
+      <p className="coach-text">{renderCoachingBody(body, context, getCoachingTone(mbti))}</p>
       <p className={styles.closing}>{preset.closing}</p>
     </article>
   );

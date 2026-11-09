@@ -158,14 +158,28 @@ export function getCoachingPreset(mbti: MbtiType | null): Preset {
   return mbti === null ? DEFAULT_PRESET : COACHING_PRESETS[mbti];
 }
 
+/** The four writing choices are shared by the preview and the saved advice. */
+export function getCoachingTone(mbti: MbtiType | null) {
+  if (mbti === null) return null;
+  return {
+    lively: mbti[0] === "E",
+    concrete: mbti[1] === "S",
+    factual: mbti[2] === "T",
+    planned: mbti[3] === "J",
+  };
+}
+
+export type CoachingTone = NonNullable<ReturnType<typeof getCoachingTone>>;
+
 /** The renderer can change wording and list presentation, never the content. */
 export function createCoachingPreview(mbti: MbtiType | null) {
   const preset = getCoachingPreset(mbti);
-  const facets = mbti === null ? [] : [
-    mbti[0] === "E" ? "활기 있는 표현" : "차분한 표현",
-    mbti[1] === "S" ? "구체적인 일상" : "목표와 변화의 의미",
-    mbti[2] === "T" ? "수치와 근거" : "공감과 격려",
-    mbti[3] === "J" ? "분명한 실천 순서" : "유연한 휴식 선택",
+  const tone = getCoachingTone(mbti);
+  const facets = tone === null ? [] : [
+    tone.lively ? "활기 있는 표현" : "차분한 표현",
+    tone.concrete ? "구체적인 일상" : "목표와 변화의 의미",
+    tone.factual ? "수치와 근거" : "공감과 격려",
+    tone.planned ? "분명한 실천 순서" : "유연한 휴식 선택",
   ];
   return Object.freeze({
     mbti,
@@ -174,15 +188,15 @@ export function createCoachingPreview(mbti: MbtiType | null) {
     content: PREVIEW_CONTENT,
     facets: Object.freeze(facets),
     expression: Object.freeze({
-      observationTitle: mbti === null ? "같은 가상 기록" : mbti[2] === "T" ? "수치와 근거로 살펴보기" : "기록을 다정하게 살펴보기",
-      observationLead: mbti === null ? "아래 기록은 모든 말투에 동일하게 사용됩니다." : mbti[2] === "T"
+      observationTitle: tone === null ? "같은 가상 기록" : tone.factual ? "수치와 근거로 살펴보기" : "기록을 다정하게 살펴보기",
+      observationLead: tone === null ? "아래 기록은 모든 말투에 동일하게 사용됩니다." : tone.factual
         ? "기록에 있는 수치와 해석의 범위를 나눠 확인하겠습니다."
         : "기록을 잘잘못으로 평가하기보다, 편안하게 실천을 이어갈 수 있도록 살펴봐요.",
-      perspective: mbti === null ? "표현만 바뀌며, 분석 결과와 조언의 핵심 내용은 바뀌지 않습니다." : mbti[1] === "S"
+      perspective: tone === null ? "표현만 바뀌며, 분석 결과와 조언의 핵심 내용은 바뀌지 않습니다." : tone.concrete
         ? "오늘 밤과 다음 날의 일상에서 적용할 구체적인 행동을 중심으로 볼게요."
         : "작은 실천과 여러 날의 기록을 연결해, 변화의 흐름을 살펴볼게요.",
-      recommendationTitle: mbti === null ? "공통 실천 제안" : mbti[3] === "J" ? "차근차근 이어갈 실천 순서" : "휴식 방법을 유연하게 고르는 실천 제안",
-      listStyle: mbti?.[3] === "J" ? "steps" as const : "bullets" as const,
+      recommendationTitle: tone === null ? "공통 실천 제안" : tone.planned ? "차근차근 이어갈 실천 순서" : "휴식 방법을 유연하게 고르는 실천 제안",
+      listStyle: tone?.planned ? "steps" as const : "bullets" as const,
     }),
   });
 }
