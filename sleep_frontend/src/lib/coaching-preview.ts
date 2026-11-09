@@ -158,6 +158,74 @@ export function getCoachingPreset(mbti: MbtiType | null): Preset {
   return mbti === null ? DEFAULT_PRESET : COACHING_PRESETS[mbti];
 }
 
+// Editable body copy by presentation preset. Sleep facts and actions are supplied separately.
+const COACHING_BODY_VOICES = {
+  ISTJ: {
+    opening: "선택한 기록을 차례로 확인하겠습니다.",
+    patternLead: "각 기간의 기록일과 평균을 순서대로 확인합니다.",
+  },
+  ISFJ: {
+    opening: "선택한 기록부터 차분히 살펴볼게요.",
+    patternLead: "기록이 있는 날을 하나씩 짚어 볼게요.",
+  },
+  INFJ: {
+    opening: "선택한 기록에서 확인할 수 있는 것부터 차분히 살펴볼게요.",
+    patternLead: "먼저 어떤 차이가 보이는지 짚어 볼게요.",
+  },
+  INTJ: {
+    opening: "선택 기록에서 확인할 수 있는 값부터 살펴보겠습니다.",
+    patternLead: "평균 차이부터 짚고 각 기간의 근거를 확인합니다.",
+  },
+  ISTP: {
+    opening: "선택 기록의 수치부터 확인합니다.",
+    patternLead: "기간별 수치를 간단히 정리합니다.",
+  },
+  ISFP: {
+    opening: "선택한 날의 기록을 가볍게 훑어봐요.",
+    patternLead: "두 기간의 기록을 편하게 읽어 봐요.",
+  },
+  INFP: {
+    opening: "이날의 기록을 천천히 살펴봐요.",
+    patternLead: "두 기간 사이에 어떤 차이가 있었는지 차분히 볼게요.",
+  },
+  INTP: {
+    opening: "이날의 기록에서 확인된 수치를 정리하겠습니다.",
+    patternLead: "차이가 어떤 기록일과 평균에서 나온 값인지 확인합니다.",
+  },
+  ESTP: {
+    opening: "기록의 핵심 수치부터 바로 볼까요?",
+    patternLead: "두 기간의 기록을 나란히 비교해 볼까요?",
+  },
+  ESFP: {
+    opening: "이날의 기록을 같이 펼쳐 볼까요?",
+    patternLead: "각 기간에 기록이 남은 날부터 같이 세어 볼까요?",
+  },
+  ENFP: {
+    opening: "이날의 기록에서 어떤 흐름이 보이는지 같이 볼까요?",
+    patternLead: "두 기간 사이에 어떤 차이가 있는지 같이 살펴봐요.",
+  },
+  ENTP: {
+    opening: "이 기록에서 확인할 수 있는 수치부터 짚어 볼까요?",
+    patternLead: "두 기간의 평균이 얼마나 다른지 먼저 확인해 볼까요?",
+  },
+  ESTJ: {
+    opening: "선택한 기록의 핵심 수치부터 짚어 보겠습니다.",
+    patternLead: "기록일, 평균, 차이 순으로 확인해 볼까요?",
+  },
+  ESFJ: {
+    opening: "선택한 날에 어떤 기록이 남았는지 같이 볼까요?",
+    patternLead: "최근 기록과 직전 기록을 차례로 살펴봐요.",
+  },
+  ENFJ: {
+    opening: "이날의 기록부터 살피고 두 기간을 비교해 볼까요?",
+    patternLead: "두 기간의 차이를 먼저 살피고 각 기간의 기록을 함께 봐요.",
+  },
+  ENTJ: {
+    opening: "선택 기록에서 확인할 수 있는 수치부터 짚어 볼까요?",
+    patternLead: "평균 차이를 먼저 확인한 다음 각 기간의 수치를 살펴보겠습니다.",
+  },
+} satisfies Record<MbtiType, { opening: string; patternLead: string }>;
+
 /** The four writing choices are shared by the preview and the saved advice. */
 export function getCoachingTone(mbti: MbtiType | null) {
   if (mbti === null) return null;
@@ -166,6 +234,7 @@ export function getCoachingTone(mbti: MbtiType | null) {
     concrete: mbti[1] === "S",
     factual: mbti[2] === "T",
     planned: mbti[3] === "J",
+    body: COACHING_BODY_VOICES[mbti],
   };
 }
 

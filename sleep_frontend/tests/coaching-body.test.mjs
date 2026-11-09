@@ -203,9 +203,9 @@ test("all sixteen bodies and 64 style/character combinations preserve facts and 
       for (const display of ["7시간", "30분", "400분", "360분", "+40분", "20분"]) {
         assert.ok(rendered.includes(display), mbti + ": " + display);
       }
-      assert.match(rendered, /최근 7일의 유효 기록은 3일[^\n]*400분/);
-      assert.match(rendered, /직전 7일의 유효 기록은 3일[^\n]*360분/);
-      assert.match(rendered, /카페인을 섭취한 시각을 적[^\n]*며칠 동안의 수면 기록과/);
+      assert.match(rendered, /최근 7일(?:의|을 보면,) 유효 기록은 3일[^\n]*400분/);
+      assert.match(rendered, /직전 7일(?:의|을 보면,) 유효 기록은 3일[^\n]*360분/);
+      assert.match(rendered, /카페인을 섭취한 시각을 적[\s\S]*그 시각을 며칠 동안의 수면 기록과 함께 살펴/);
       assert.match(rendered, /기기가 추정한 한 건의 기록/);
       assert.match(rendered, /평소 수면 패턴이나 변화의 원인을 판단하기에는 정보가 부족/);
       assert.match(rendered, /유효한 기록이 있는 날의 기기 추정 수면 시간만/);
@@ -216,11 +216,62 @@ test("all sixteen bodies and 64 style/character combinations preserve facts and 
   assert.deepEqual(free, original);
 });
 
+test("E and I change period and action sentences beyond the opening", () => {
+  for (const type of MBTI_TYPES.filter(type => type.startsWith("E"))) {
+    const quieter = "I" + type.slice(1);
+    const lively = render(fixtures.free, type);
+    const calm = render(fixtures.free, quieter);
+    assert.match(lively, /최근 7일을 보면, 유효 기록은 3일/);
+    assert.match(calm, /최근 7일의 유효 기록은 3일/);
+    const action = text => text.split("\n\n").at(-2).split("\n").slice(1).join("\n");
+    for (const fixture of [fixtures.free, fixtures.unavailable]) {
+      assert.match(action(render(fixture, type)), /\?/);
+      assert.doesNotMatch(action(render(fixture, quieter)), /\?/);
+    }
+    assert.doesNotMatch(lively, /!/);
+  }
+});
+
+test("J and P change the actual steps without removing any suggestion conditions", () => {
+  const cases = [
+    [fixtures.free, "카페인을 섭취한 시각을 적어", "그 시각을 며칠 동안의 수면 기록과 함께 살펴"],
+    [fixtures.zero, "며칠 동안 수면 기록을 모아", "날짜별 수면 시간을 비교해"],
+    [fixtures.insufficient, "며칠 동안 취침·기상 시각을 적어", "그 기록을 보며 일정에 맞춰 반복하기 쉬운 시간대를 찾아"],
+    [fixtures.unavailable, "기기 앱에서 수면 시간이 기록됐는지 확인해", "다시 불러와"],
+    [fixtures.notes, "다음 기록에 아침에 느낀 휴식 정도를 함께 적어", "기기 기록과 비교해"],
+  ];
+  for (const type of MBTI_TYPES.filter(type => type.endsWith("J"))) {
+    const flexible = type.slice(0, -1) + "P";
+    for (const [fixture, first, next] of cases) {
+      const action = mbti => render(fixture, mbti).split("\n\n").at(-2).split("\n").slice(1);
+      const plannedLines = action(type);
+      const flexibleLines = action(flexible);
+      assert.equal(plannedLines.length, 2);
+      assert.ok(plannedLines[0].startsWith("먼저 " + first), type);
+      assert.ok(plannedLines[1].startsWith("그다음 " + next), type);
+      assert.equal(flexibleLines.length, 1);
+      assert.ok(flexibleLines[0].includes("편한 방식으로 " + first + " 본 뒤, " + next), flexible);
+    }
+  }
+});
+
+test("S/N comparison order and T/F endings still follow their presets", () => {
+  for (const mbti of MBTI_TYPES) {
+    const [, period] = render(fixtures.free, mbti).split("\n\n");
+    const recent = period.indexOf("400분");
+    const previous = period.indexOf("360분");
+    const difference = period.indexOf("+40분");
+    assert.ok(recent < previous);
+    assert.equal(previous < difference, mbti[1] === "S");
+    assert.ok(period.includes(mbti[2] === "T" ? "400분입니다." : "400분이에요."));
+  }
+});
+
 test("zero and negative comparisons keep their signs and are not treated as withheld", () => {
   const zero = render(fixtures.zero, "INFP");
   assert.match(zero, /차이는 \+0분/);
   assert.doesNotMatch(zero, /평균 차이는 표시를 보류/);
-  assert.match(zero, /며칠 동안 수면 기록을 모은 뒤 날짜별 수면 시간을 함께 비교/);
+  assert.match(zero, /며칠 동안 수면 기록을 모아 본 뒤, 날짜별 수면 시간을 비교/);
   const negative = structuredClone(fixtures.free);
   negative.coaching = negative.coaching.replace("360분", "440분").replace("+40분", "-40분");
   Object.assign(negative.context.presentation.patterns.previous, {
@@ -237,8 +288,8 @@ test("insufficient data keeps the server's rounding, missing values, and reasons
     const body = render(fixtures.insufficient, mbti);
     assert.notEqual(body, fixtures.insufficient.coaching);
     assert.match(body, /약 7시간/);
-    assert.match(body, /최근 7일의 유효 기록은 1일[^\n]*419\.5분/);
-    assert.match(body, /직전 7일의 유효 기록은 0일[^\n]*기록일 평균은 표시할 수 없/);
+    assert.match(body, /최근 7일(?:의|을 보면,) 유효 기록은 1일[^\n]*419\.5분/);
+    assert.match(body, /직전 7일(?:의|을 보면,) 유효 기록은 0일[^\n]*기록일 평균은 표시할 수 없/);
     assert.match(body, /평균 차이는 표시를 보류/);
     assert.match(body, /두 기간에 각각 유효 기록일이 3일 이상/);
     assert.match(body, /최근 유효 기록일이 2일 이상/);
@@ -253,7 +304,7 @@ test("an invalid reference keeps the device check and does not invent a period",
   const body = render(fixtures.unavailable, "ENFP");
   assert.notEqual(body, fixtures.unavailable.coaching);
   assert.match(body, /수면 시간을 확인할 수 없어요/);
-  assert.match(body, /기기 앱에서 수면 시간이 기록됐는지 확인하고 다시 불러와/);
+  assert.match(body, /기기 앱에서 수면 시간이 기록됐는지 확인해 본 뒤, 다시 불러와/);
   assert.match(body, /수면 시간 값이 없거나 유효한 기록 범위를 벗어났어요/);
   assert.match(body, /선택한 기록의 날짜와 시간 구간/);
   assert.doesNotMatch(body, /최근 7일|직전 7일/);
@@ -265,7 +316,7 @@ test("excluded records, unreliable starts, and different timezones preserve dist
   assert.match(body, /날짜, 시간 구간 또는 수면 시간을 확인할 수 없는 기록은 집계에 넣지 않았어요/);
   assert.match(body, /기록이 겹치거나 같은 기록 ID의 값이 다른 날은 집계에 넣지 않았어요/);
   assert.match(body, /날짜마다 믿을 만한 시작 시각을 하나씩 확인하기 어려워 시작 시각 변동은 표시를 보류/);
-  assert.match(body, /다음 기록에는 아침에 느낀 휴식 정도도 적어 두고, 기기 기록과 함께 비교/);
+  assert.match(body, /다음 기록에 아침에 느낀 휴식 정도를 함께 적어 본 뒤, 기기 기록과 비교/);
 
   const mixed = structuredClone(fixtures.free);
   mixed.coaching = mixed.coaching.replace("\n기기 기록의 시작 시각 범위 20분", "")

@@ -1,26 +1,31 @@
 import type { CoachingTone } from "./coaching-preview";
 
-// Original v1 wording is kept alongside the conversational wording for verification.
+// Each entry starts with the exact v1 wording, followed by the two actions for styled display.
 const SUGGESTIONS = {
   check_device_record: [
     "기기 앱에서 수면 시간이 기록됐는지 확인한 뒤 다시 불러와 보세요.",
-    "기기 앱에서 수면 시간이 기록됐는지 확인하고 다시 불러와 봐요.",
+    "기기 앱에서 수면 시간이 기록됐는지 확인해",
+    "다시 불러와",
   ],
   track_caffeine_timing: [
     "카페인을 섭취한 시각을 적고, 며칠 동안의 수면 기록과 함께 살펴보세요.",
-    "카페인을 섭취한 시각을 적어 두고, 며칠 동안의 수면 기록과 나란히 살펴봐요.",
+    "카페인을 섭취한 시각을 적어",
+    "그 시각을 며칠 동안의 수면 기록과 함께 살펴",
   ],
   track_bed_and_wake_times: [
     "며칠 동안 취침·기상 시각을 적어 보고, 일정에 맞춰 반복하기 쉬운 시간대를 찾아보세요.",
-    "며칠 동안 취침·기상 시각을 적어 봐요. 그 기록을 보며 일정에 맞춰 반복하기 쉬운 시간대를 찾아봐요.",
+    "며칠 동안 취침·기상 시각을 적어",
+    "그 기록을 보며 일정에 맞춰 반복하기 쉬운 시간대를 찾아",
   ],
   track_morning_rest: [
     "다음 기록에는 아침에 느낀 휴식 정도를 함께 적어, 기기 기록과 비교해 보세요.",
-    "다음 기록에는 아침에 느낀 휴식 정도도 적어 두고, 기기 기록과 함께 비교해 봐요.",
+    "다음 기록에 아침에 느낀 휴식 정도를 함께 적어",
+    "기기 기록과 비교해",
   ],
   compare_daily_sleep: [
     "며칠 동안 수면 기록을 모아 날짜별 수면 시간을 비교해 보세요.",
-    "며칠 동안 수면 기록을 모은 뒤 날짜별 수면 시간을 함께 비교해 봐요.",
+    "며칠 동안 수면 기록을 모아",
+    "날짜별 수면 시간을 비교해",
   ],
 } as const;
 
@@ -199,8 +204,8 @@ function originalBody(data: PresentationV1): string {
   ].join("\n\n");
 }
 
-function periodSentence(label: string, period: Period, factual: boolean): string {
-  const days = label + "의 유효 기록은 " + period.valid_days + "일";
+function periodSentence(label: string, period: Period, { lively, factual }: CoachingTone): string {
+  const days = label + (lively ? "을 보면, 유효 기록은 " : "의 유효 기록은 ") + period.valid_days + "일";
   if (period.average_display === null) {
     return factual ? days + "이며, 기록일 평균은 표시할 수 없습니다."
       : days + "이에요. 기록일 평균은 표시할 수 없어요.";
@@ -209,12 +214,22 @@ function periodSentence(label: string, period: Period, factual: boolean): string
     : days + "이에요. 기록이 있는 날의 평균 수면 시간은 " + period.average_display + "이에요.";
 }
 
+function styledSuggestion(id: PresentationV1["suggestion_id"], { factual, lively, planned }: CoachingTone): string {
+  const [, first, next] = SUGGESTIONS[id];
+  const ending = factual ? "보세요." : "봐요.";
+  if (planned) {
+    const firstEnding = lively ? (factual ? "보시겠어요?" : "볼까요?") : ending;
+    return "먼저 " + first + " " + firstEnding + "\n그다음 " + next + " " + ending;
+  }
+  const lead = lively ? "어떻게 시작해 볼까요? " : "";
+  return lead + "편한 방식으로 " + first + " 본 뒤, " + next + " " + ending;
+}
+
 function styledBody(data: PresentationV1, tone: CoachingTone): string {
   const { observation, patterns, suggestion_id, limitation_ids } = data;
-  const { lively, concrete, factual, planned } = tone;
+  const { body, concrete, factual, planned } = tone;
   const sections = [];
   const selectedTitle = concrete ? "선택한 기록부터" : "수면 흐름의 출발점";
-  const selectedLead = lively ? "함께 기록을 살펴봐요!" : "기록을 차분히 살펴볼게요.";
   const asleep = observation.asleep.display;
   const awake = observation.awake.display;
   const observed = asleep === null
@@ -222,12 +237,12 @@ function styledBody(data: PresentationV1, tone: CoachingTone): string {
     : (factual ? "기기가 수면으로 분류한 시간은 " + asleep + "입니다."
       : "기기가 수면으로 분류한 시간은 " + asleep + "이에요.")
       + (awake === null ? "" : " 각성으로 분류한 시간은 " + awake + (factual ? "입니다." : "이에요."));
-  sections.push(selectedTitle + "\n" + selectedLead + " " + observed);
+  sections.push(selectedTitle + "\n" + body.opening + " " + observed);
 
   if (patterns.recent && patterns.previous) {
     const periods = [
-      periodSentence(PERIOD_LABELS.recent, patterns.recent, factual),
-      periodSentence(PERIOD_LABELS.previous, patterns.previous, factual),
+      periodSentence(PERIOD_LABELS.recent, patterns.recent, tone),
+      periodSentence(PERIOD_LABELS.previous, patterns.previous, tone),
     ];
     const difference = patterns.comparison.difference_display;
     const comparison = difference === null
@@ -238,10 +253,11 @@ function styledBody(data: PresentationV1, tone: CoachingTone): string {
     if (spread !== null) {
       lines.push("기기 기록의 시작 시각 범위는 " + spread + (factual ? "입니다." : "이에요."));
     }
+    if (difference !== null) lines.unshift(body.patternLead);
     sections.push((concrete ? "기간별 수면 기록" : "두 기간의 수면 흐름") + "\n" + lines.join("\n"));
   }
 
-  sections.push((planned ? "차근차근 실천하기" : "생활에 맞춰 시도하기") + "\n" + SUGGESTIONS[suggestion_id][factual ? 0 : 1]);
+  sections.push((planned ? "차근차근 실천하기" : "생활에 맞춰 시도하기") + "\n" + styledSuggestion(suggestion_id, tone));
   sections.push((factual ? "해석에 필요한 한계" : "기록을 볼 때 함께 기억해요")
     + "\n" + limitation_ids.map(id => LIMITATIONS[id][factual ? 0 : 1]).join("\n"));
   return sections.join("\n\n");
