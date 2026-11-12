@@ -1,9 +1,9 @@
-# Demo only. Service creation and billing need separate user confirmation.
+# Demo-only Free service. Paid upgrades require new explicit user approval.
 services:
   - type: web
     name: daljam
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: singapore
     numInstances: 1
     dockerfilePath: ./Dockerfile
