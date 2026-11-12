@@ -97,7 +97,7 @@ def render_upload(user):
     with st.expander("1. 수면 파일 가져오기", expanded=True):
         st.write("Health Data Export .md 또는 Health Export Kit .json 파일을 선택하세요.")
         st.caption("수면 JSON v1도 지원합니다. 시각만 담긴 파일은 날짜 범위와 시간대 정보로 복원합니다. Apple 건강 XML은 지원하지 않습니다.")
-        st.caption("분석을 저장하면 로그인한 계정의 서버 저장소에 보관됩니다. AI 조언 생성 시에만 기록 요약과 입력한 생활습관을 OpenAI에 전송합니다.")
+        st.caption("분석을 저장하면 로그인한 계정의 서버 저장소에 보관됩니다. 기본 조언은 달잠 서버에서 규칙으로 생성합니다. OpenAI 방식이 활성화된 서버에서는 조언 생성 시 기록 요약과 생활습관 입력을 OpenAI에 전송합니다.")
         from json_sleep import EXAMPLE_JSON
         st.download_button("JSON 예제 다운로드 · 가상 기록", EXAMPLE_JSON, "sleep_example.json", "application/json")
         uploaded = st.file_uploader("수면 기록 파일", type=["md", "json"], key="watch_upload")
@@ -233,7 +233,7 @@ def render_records(user):
         caffeine = st.selectbox("취침 전 6시간 이내 카페인", ["미입력", "없음", "있음"])
         regularity = st.selectbox("평소 취침·기상 시간", ["미입력", "대체로 일정함", "자주 달라짐"])
         satisfaction = st.selectbox("수면 만족도", ["미입력", "좋음", "보통", "나쁨"])
-        st.caption("선택한 기록, 최근 최대 14회 기록의 요약과 위 입력을 OpenAI에 전송합니다. API 사용료가 발생할 수 있습니다.")
+        st.caption("기본 조언은 달잠 서버에서 기록과 생활습관 입력을 분석해 생성합니다. 서버에서 OpenAI 방식을 활성화한 경우 기록 요약과 입력이 전송되며 API 사용료가 발생할 수 있습니다.")
         if st.form_submit_button("AI 조언 생성"):
             try:
                 with st.spinner("나의 기록을 바탕으로 조언을 작성하고 있습니다…"):
@@ -248,7 +248,7 @@ def render_records(user):
                 elif isinstance(error, (ValueError, RuntimeError)):
                     st.error(str(error))
                 else:
-                    st.error("AI 조언 생성에 실패했습니다. 서버의 API 설정과 연결을 확인하세요. 기록은 저장되어 있습니다.")
+                    st.error("조언 생성에 실패했습니다. 잠시 후 다시 시도하세요. 수면 기록은 저장되어 있습니다.")
     history = coaching_service.list_coaching(user["id"], selected_id)
     st.subheader("저장된 AI 코칭 다시 보기")
     if history:
