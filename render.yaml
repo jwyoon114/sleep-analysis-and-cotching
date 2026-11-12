@@ -1,0 +1,16 @@
+# Demo only. Service creation and billing need separate user confirmation.
+services:
+  - type: web
+    name: daljam
+    runtime: docker
+    plan: 0.5c-512mb
+    region: singapore
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: 'off'
+    healthCheckPath: /api/demo-health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: DALJAM_DEMO_ONLY
+        value: '1'

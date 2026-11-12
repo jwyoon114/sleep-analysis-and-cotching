@@ -8,6 +8,7 @@
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "typecheck": "tsc --noEmit",
     "test:coaching": "node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs",
+    "test:demo": "node --test tests/demo-runtime.test.mjs",
     "test:timeline": "node --experimental-strip-types --test tests/timeline.test.mjs"
   },
   "dependencies": {

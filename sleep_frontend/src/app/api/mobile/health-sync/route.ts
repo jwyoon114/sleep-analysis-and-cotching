@@ -1,8 +1,10 @@
 import {NextRequest,NextResponse} from 'next/server';
+import {demoBlockedResponse, isDemoOnly} from '@/lib/demo-mode';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const LIMIT=3*1024*1024;
 export async function POST(request:NextRequest){
+  if(isDemoOnly())return demoBlockedResponse();
   const fail=(detail:string,status:number)=>NextResponse.json({detail},{status,headers:{'Cache-Control':'no-store'}});
   const authorization=request.headers.get('authorization');
   if(!authorization||!/^Bearer [A-Za-z0-9_-]{40,200}$/.test(authorization))return fail('건강앱 연결이 필요합니다.',401);

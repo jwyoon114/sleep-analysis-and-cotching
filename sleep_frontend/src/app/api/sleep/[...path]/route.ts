@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {demoBlockedResponse, isDemoOnly} from "@/lib/demo-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ const LIMIT = 4 * 1024 * 1024 + 64 * 1024;
 const allowed = /^(?:health|alarms(?:\/test)?|auth\/(?:register|login|logout|me)|analyze|coach|watch\/(?:health\/connection|import|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
 
 async function handler(request: NextRequest, context: {params: Promise<{path: string[]}>}) {
+  if (isDemoOnly()) return demoBlockedResponse();
   const { path } = await context.params;
   const endpoint = path.join("/");
   const fail = (detail: string, status: number) => NextResponse.json({detail}, {status, headers: {"Cache-Control": "no-store"}});
