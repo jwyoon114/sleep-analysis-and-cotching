@@ -1,4 +1,5 @@
 """Consent-based, read-only native health synchronization. Never store raw exports."""
+from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone, time
 import json
@@ -11,6 +12,8 @@ PROVIDERS = {'healthkit': 'Apple 건강', 'health_connect': 'Health Connect'}
 
 def database(path=None):
     db = connect(path)
+    if getattr(db, 'is_postgres', False):
+        return db  # Schema is applied only by postgres_migrate, never on requests.
     db.executescript("""
     CREATE TABLE IF NOT EXISTS health_connections(
       account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
@@ -40,7 +43,11 @@ def pair(account, provider, source_id, source_name, auto_coach=False, path=None)
     token = secrets.token_urlsafe(48)
     now = datetime.now(timezone.utc)
     with closing(database(path)) as db, db:
-        db.execute('INSERT OR REPLACE INTO health_connections(account_id,token_hash,provider,source_id,source_name,created_at,expires_at,last_synced_at,auto_coach,advice_status) VALUES(?,?,?,?,?,?,?,?,?,?)',
+        db.execute('''INSERT INTO health_connections(account_id,token_hash,provider,source_id,source_name,created_at,expires_at,last_synced_at,auto_coach,advice_status) VALUES(?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(account_id) DO UPDATE SET token_hash=excluded.token_hash,provider=excluded.provider,
+          source_id=excluded.source_id,source_name=excluded.source_name,created_at=excluded.created_at,
+          expires_at=excluded.expires_at,last_synced_at=excluded.last_synced_at,auto_coach=excluded.auto_coach,
+          advice_status=excluded.advice_status,last_window_end=NULL''',
                    (account,digest(token),provider,source_id,source_name,now.isoformat(),(now+timedelta(days=180)).isoformat(),None,int(auto_coach),None))
     return {'sync_token':token, 'account_id':account}
 
@@ -136,7 +143,7 @@ def synchronize(token, snapshot, path=None):
         # Hold the write transaction through token validation: revocation and
         # concurrent snapshots cannot race and restore an old connection.
         with db:
-            db.execute('BEGIN IMMEDIATE')
+            begin_write(db)
             connection=authenticated(db,token); account=connection['account_id']
             records,first,last,ignored=normalize(snapshot,connection)
             if connection.get('last_window_end') and last<stamp(connection['last_window_end']):
@@ -151,19 +158,19 @@ def synchronize(token, snapshot, path=None):
                 old=db.execute('SELECT payload FROM sessions WHERE id=? AND subject=?',(sid,account)).fetchone()
                 if old and json.loads(old['payload'])==session: ids.append(sid);continue
                 if old:
-                    db.execute('UPDATE sessions SET start=?,end=?,payload=? WHERE id=?',(session['start'],session['end'],payload,sid));updated+=1
+                    db.execute('UPDATE sessions SET start=?,"end"=?,payload=? WHERE id=?',(session['start'],session['end'],payload,sid));updated+=1
                     db.execute('DELETE FROM stages WHERE session_id=?',(sid,))
                 else:
                     db.execute('INSERT INTO sessions VALUES(?,?,?,?,?)',(sid,account,session['start'],session['end'],payload))
                     db.execute('INSERT INTO session_created VALUES(?,?)',(sid,now));added+=1
                 db.executemany('INSERT INTO stages VALUES(?,?,?,?,?,?)',[(sid,i,s['start'],s['end'],s['stage'],s['minutes']) for i,s in enumerate(session['segments'])])
-                db.execute('INSERT OR REPLACE INTO health_sync_sessions VALUES(?,?,?)',(account,day,sid));ids.append(sid)
+                db.execute('INSERT INTO health_sync_sessions VALUES(?,?,?) ON CONFLICT(account_id,day) DO UPDATE SET session_id=excluded.session_id',(account,day,sid));ids.append(sid)
             # Only a complete snapshot for the chosen source may hide missing
             # native records. Manual uploads are never touched.
-            for row in list(db.execute('SELECT h.day,s.id,s.start,s.end,s.payload FROM health_sync_sessions h JOIN sessions s ON s.id=h.session_id WHERE h.account_id=?',(account,))) if records and not ignored and connection['provider']=='health_connect' else []:
+            for row in list(db.execute('SELECT h.day,s.id,s.start,s."end",s.payload FROM health_sync_sessions h JOIN sessions s ON s.id=h.session_id WHERE h.account_id=?',(account,))) if snapshot.get('complete_snapshot') is True and records and not ignored and connection['provider']=='health_connect' else []:
                 meta=json.loads(row['payload']).get('health_sync',{})
                 if row['day'] not in records and meta.get('provider')==connection['provider'] and meta.get('source_id')==connection['source_id'] and first<=stamp(row['start']) and stamp(row['end'])<=last:
-                    removed+=db.execute('INSERT OR IGNORE INTO trash_sessions VALUES(?,?,?)',(row['id'],account,now)).rowcount
+                    removed+=db.execute('INSERT INTO trash_sessions VALUES(?,?,?) ON CONFLICT DO NOTHING',(row['id'],account,now)).rowcount
             db.execute('UPDATE health_connections SET last_synced_at=?,last_window_end=? WHERE account_id=?',(now,last.isoformat(),account))
         return {'added_sessions':added,'updated_sessions':updated,'skipped_deleted':skipped,'removed_sessions':removed,'ignored_incomplete':ignored,'analysis_ids':ids,'last_synced_at':now,'account_id':account,'auto_coach':bool(connection['auto_coach'])}
 
@@ -181,7 +188,7 @@ def auto_advice(account, ids):
         with closing(database()) as db,db:
             connection=db.execute('SELECT auto_coach FROM health_connections WHERE account_id=?',(account,)).fetchone()
             if not connection or not connection['auto_coach']: return
-            if not db.execute('INSERT OR IGNORE INTO health_advice_jobs VALUES(?,?)',(account,newest['analysis_id'])).rowcount: return
+            if not db.execute('INSERT INTO health_advice_jobs VALUES(?,?) ON CONFLICT DO NOTHING',(account,newest['analysis_id'])).rowcount: return
         # generate() applies the existing account/global limits and ownership checks.
         coaching_service.generate(account,newest['analysis_id'],{'caffeine':'미입력','regularity':'미입력','satisfaction':'미입력','age_group':'미입력'})
         message='최신 기록의 AI 조언을 저장했어요.'

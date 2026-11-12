@@ -152,6 +152,11 @@ def _apply_one(connection, migration: Migration) -> None:
         )
 
 
+def inspect_history(connection, migrations=None) -> tuple[int, ...]:
+    """Verify applied history without DDL, migrations, or credential output."""
+    return _applied_versions(connection, load_migrations() if migrations is None else migrations)
+
+
 def apply_migrations(directory: Path = MIGRATIONS, *, connect_timeout: int = 10) -> tuple[int, ...]:
     """Apply pending versions atomically and return the versions committed."""
     migrations = load_migrations(directory)

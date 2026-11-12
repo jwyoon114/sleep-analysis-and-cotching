@@ -1,4 +1,5 @@
 """Apple Watch Markdown import and persistent local sleep history (no EEG inference)."""
+from app_database import table_names
 import csv
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -139,6 +140,9 @@ def parse_export(text):
 
 
 def connect(db_path=None):
+    from app_database import uses_postgres, connect_application_postgres
+    if uses_postgres(db_path):
+        return connect_application_postgres()
     path = Path(db_path or DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=30)
@@ -220,7 +224,7 @@ def import_export(text, filename, subject="apple_watch_owner", db_path=None):
     try:
         with db:
             duplicate = db.execute("SELECT 1 FROM imports WHERE id=?", (import_id,)).fetchone() is not None
-            db.execute("INSERT OR IGNORE INTO imports VALUES(?,?,?,?)", (import_id, subject, Path(filename).name, datetime.now(timezone.utc).isoformat()))
+            db.execute('INSERT INTO imports VALUES(?,?,?,?) ON CONFLICT DO NOTHING', (import_id, subject, Path(filename).name, datetime.now(timezone.utc).isoformat()))
             for session in parsed["sessions"]:
                 sid = digest(json.dumps([subject, session["source"], session["start"], session["end"]]))
                 session["analysis_id"] = sid
@@ -236,19 +240,19 @@ def import_export(text, filename, subject="apple_watch_owner", db_path=None):
                     db.execute("INSERT INTO sessions VALUES(?,?,?,?,?)", (sid, subject, session["start"], session["end"], payload))
                     db.execute("INSERT INTO session_created VALUES(?,?)", (sid, datetime.now(timezone.utc).isoformat()))
                     db.executemany("INSERT INTO stages VALUES(?,?,?,?,?,?)", [(sid, i, s["start"], s["end"], s["stage"], s["minutes"]) for i, s in enumerate(session["segments"])])
-                db.execute("INSERT OR IGNORE INTO import_sessions VALUES(?,?)", (import_id, sid))
+                db.execute('INSERT INTO import_sessions VALUES(?,?) ON CONFLICT DO NOTHING', (import_id, sid))
                 ids.append(sid)
             for sample in parsed["samples"]:
                 # Health Export Kit's MD and JSON HRV rounding differs by 0.1 ms.
                 # Match the observation identity first, preserving the first value.
-                prior = db.execute("SELECT value FROM samples WHERE subject=? AND metric=? AND source=? AND unit=? AND start=? AND end=?", (subject, sample["metric"], sample["source"], sample["unit"], sample["start"], sample["end"])).fetchall()
+                prior = db.execute('SELECT value FROM samples WHERE subject=? AND metric=? AND source=? AND unit=? AND start=? AND "end"=?', (subject, sample["metric"], sample["source"], sample["unit"], sample["start"], sample["end"])).fetchall()
                 if prior:
                     tolerance = 0.100000001 if sample["metric"] == "HRV SDNN" else 0
                     if any(not math.isclose(row["value"], sample["value"], rel_tol=0, abs_tol=tolerance) for row in prior):
                         raise ValueError("동일 시각의 생체지표 값이 기존 기록과 다릅니다. 원본 파일을 확인하세요.")
                     continue
                 sample_id = digest(json.dumps([subject, sample], sort_keys=True))
-                db.execute("INSERT OR IGNORE INTO samples VALUES(?,?,?,?,?,?,?,?)", (sample_id, subject, sample["metric"], sample["source"], sample["unit"], sample["start"], sample["end"], sample["value"]))
+                db.execute('INSERT INTO samples VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', (sample_id, subject, sample["metric"], sample["source"], sample["unit"], sample["start"], sample["end"], sample["value"]))
         return {"import_id": import_id, "duplicate_file": duplicate, "added_sessions": added,
                 "session_count": len(ids), "sample_count": len(parsed["samples"]), "analysis_ids": ids}
     finally:
@@ -286,7 +290,7 @@ def delete_session(analysis_id, subject, db_path=None):
     db = connect(db_path)
     try:
         with db:
-            result = db.execute("INSERT OR IGNORE INTO trash_sessions SELECT id, subject, ? FROM sessions WHERE id=? AND subject=?", (datetime.now(timezone.utc).isoformat(), analysis_id, subject))
+            result = db.execute('INSERT INTO trash_sessions SELECT id, subject, ? FROM sessions WHERE id=? AND subject=? ON CONFLICT DO NOTHING', (datetime.now(timezone.utc).isoformat(), analysis_id, subject))
             return result.rowcount > 0
     finally:
         db.close()
@@ -294,25 +298,28 @@ def delete_session(analysis_id, subject, db_path=None):
 
 def erase_session_rows(db, analysis_id, subject):
     """Internal hard deletion, also used to sanitize managed SQLite backups."""
-    row = db.execute("SELECT start, end FROM sessions WHERE id=? AND subject=?", (analysis_id, subject)).fetchone()
+    row = db.execute('SELECT start, "end" FROM sessions WHERE id=? AND subject=?', (analysis_id, subject)).fetchone()
     if row is None:
         return False
     start, end = (datetime.fromisoformat(row[key]) for key in ("start", "end"))
-    remaining = [(datetime.fromisoformat(r["start"]), datetime.fromisoformat(r["end"])) for r in db.execute("SELECT start, end FROM sessions WHERE subject=? AND id<>?", (subject, analysis_id))]
+    remaining = [(datetime.fromisoformat(r["start"]), datetime.fromisoformat(r["end"])) for r in db.execute('SELECT start, "end" FROM sessions WHERE subject=? AND id<>?', (subject, analysis_id))]
     sample_ids = []
-    for sample in db.execute("SELECT id, start, end FROM samples WHERE subject=?", (subject,)):
+    for sample in db.execute('SELECT id, start, "end" FROM samples WHERE subject=?', (subject,)):
         a, b = datetime.fromisoformat(sample["start"]), datetime.fromisoformat(sample["end"])
         if start <= a <= b <= end and not any(a <= y and b >= x for x, y in remaining):
             sample_ids.append((sample["id"],))
     db.executemany("DELETE FROM samples WHERE id=?", sample_ids)
-    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = table_names(db)
     for table, column in (("trash_coaching", "coaching_id"), ("coaching_context", "coaching_id")):
         if table in tables:
             db.execute(f"DELETE FROM {table} WHERE {column} IN (SELECT id FROM coaching WHERE session_id=?)", (analysis_id,))
     # A context snapshot for another coaching may also contain this record.
     # Remove that snapshot rather than retain a second copy of deleted data.
     if "coaching_context" in tables:
-        db.execute("DELETE FROM coaching_context WHERE EXISTS (SELECT 1 FROM json_each(coaching_context.payload, '$.record_ids') WHERE value=?)", (analysis_id,))
+        if getattr(db, 'is_postgres', False):
+            db.execute("DELETE FROM coaching_context WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(coaching_context.payload::jsonb -> 'record_ids') AS ids(value) WHERE value=?)", (analysis_id,))
+        else:
+            db.execute("DELETE FROM coaching_context WHERE EXISTS (SELECT 1 FROM json_each(coaching_context.payload, '$.record_ids') WHERE value=?)", (analysis_id,))
     if "trash_sessions" in tables:
         db.execute("DELETE FROM trash_sessions WHERE session_id=?", (analysis_id,))
     if "session_created" in tables:

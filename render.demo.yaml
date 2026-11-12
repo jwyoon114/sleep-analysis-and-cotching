@@ -1,0 +1,16 @@
+# Demo-only Free service. Paid upgrades require new explicit user approval.
+services:
+  - type: web
+    name: daljam
+    runtime: docker
+    plan: free
+    region: singapore
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: 'off'
+    healthCheckPath: /api/demo-health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: DALJAM_DEMO_ONLY
+        value: '1'

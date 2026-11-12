@@ -1,16 +1,38 @@
-# Demo-only Free service. Paid upgrades require new explicit user approval.
+# Apply only to the existing daljam service after tests and payment setup.
+# $7 web + $6 DB + 5 GB storage (currently $1.50): base $14.50/month.
+# This file does NOT authorize creating a duplicate service or a paid workspace.
 services:
   - type: web
     name: daljam
     runtime: docker
-    plan: free
+    plan: starter
     region: singapore
     numInstances: 1
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.production
     dockerContext: .
     autoDeployTrigger: 'off'
-    healthCheckPath: /api/demo-health
+    healthCheckPath: /api/ready
     maxShutdownDelaySeconds: 30
     envVars:
+      - key: DALJAM_ENV
+        value: production
       - key: DALJAM_DEMO_ONLY
-        value: '1'
+        value: '0'
+      - key: DALJAM_PUBLIC_ORIGIN
+        value: https://daljam.onrender.com
+      - key: DALJAM_BACKUP_POLICY
+        value: render-pitr-7d-v1
+      - key: SLEEP_DB_BACKEND
+        value: postgresql
+      - key: COACHING_ENGINE
+        value: rules
+      - key: SLEEP_DESKTOP_ALARMS
+        value: '0'
+      - key: DATABASE_URL
+        sync: false
+databases:
+  - name: daljam-postgres
+    plan: basic-256mb
+    region: singapore
+    diskSizeGB: 5
+    ipAllowList: []

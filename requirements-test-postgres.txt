@@ -1,0 +1,3 @@
+# Only for disposable local TLS test certificate generation when openssl is absent.
+-r requirements-postgres.txt
+cryptography==50.0.2

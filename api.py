@@ -4,6 +4,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import JSONResponse
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
 import coaching_service
@@ -14,8 +15,18 @@ import health_sync
 from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
+from app_database import DatabaseUnavailable, BackupPolicyPending, connect_application_postgres, uses_postgres
+from contextlib import closing
 
 app = FastAPI(title="나의 수면 리포트 API", version="2.0.0")
+
+@app.exception_handler(DatabaseUnavailable)
+async def database_unavailable(request, error):
+    code = 'backup_policy_pending' if isinstance(error, BackupPolicyPending) else 'database_unavailable'
+    message = '클라우드 백업 정책 확인 전에는 영구 삭제를 사용할 수 없습니다.' if isinstance(error, BackupPolicyPending) else '데이터베이스를 사용할 수 없습니다. 잠시 후 다시 시도하세요.'
+    return JSONResponse(status_code=503, content={'detail': {'code': code, 'message': message}})
+
+
 @app.on_event("startup")
 def start_alarm_scheduler():
     sleep_alarms.start_worker()
@@ -33,6 +44,14 @@ bearer = HTTPBearer(auto_error=False)
 class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=40)
     password: str = Field(min_length=1, max_length=128)
+
+
+class Registration(Credentials):
+    privacy_consent: bool = False
+    health_consent: bool = False
+    overseas_consent: bool = False
+    adult_confirmed: bool = False
+    policy_version: str = ""
 
 
 class CoachingRequest(BaseModel):
@@ -77,6 +96,16 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
 def health():
     return {"status": "ok", "service": "wearable_sleep", "supported_formats": ["Health Data Export Markdown (.md)", "Sleep JSON v1 (.json)", "Health Export Kit JSON v2 (.json)"]}
 
+
+@app.get("/ready")
+def ready():
+    # No migrations, data writes, or SQLite initialization during probes.
+    if not uses_postgres():
+        return JSONResponse(status_code=503, content={"status": "not_ready"}, headers={"Cache-Control": "no-store"})
+    with closing(connect_application_postgres()) as db:
+        db.execute("SELECT 1").fetchone()
+    return JSONResponse(content={"status": "ready"}, headers={"Cache-Control": "no-store"})
+
 @app.get("/alarms")
 def alarms(user=Depends(require_user)):
     return sleep_alarms.get_settings(user['id'])
@@ -96,9 +125,13 @@ def test_alarm(user=Depends(require_user)):
 
 
 @app.post("/auth/register", status_code=201)
-def sign_up(request: Credentials):
+def sign_up(request: Registration):
     try:
-        return {"user": register(request.username, request.password)}
+        from production_policy import require_registration_consent, is_production
+        require_registration_consent(request.privacy_consent, request.health_consent, request.policy_version,
+                                     request.overseas_consent, request.adult_confirmed)
+        return {"user": register(request.username, request.password,
+                                 consent=request.policy_version if is_production() else None)}
     except ValueError as error:
         raise HTTPException(400, str(error))
 

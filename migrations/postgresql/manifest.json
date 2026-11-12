@@ -8,6 +8,11 @@
       "file": "0001_initial_schema.sql",
       "sha256": "b9c838c38ada57a97340bdd091e07b4e2088c7738d271027a00c9b1fc10ba8b0",
       "application_tables": 20
+    },
+    {
+      "version": 2,
+      "file": "0002_account_consents.sql",
+      "sha256": "40fa3b6f485add1084d4cabb36ab1c54630df51ac25e86156a87e7d51420c4c2"
     }
   ]
 }

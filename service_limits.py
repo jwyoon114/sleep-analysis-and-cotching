@@ -1,4 +1,5 @@
 """Optional server-side request limits shared by web and API deployments."""
+from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import os
@@ -29,7 +30,7 @@ def reserve_coaching_request(account_id, db_path=None):
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
     with closing(connect(db_path)) as db, db:
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         if not db.execute("SELECT 1 FROM accounts WHERE id=?", (account_id,)).fetchone():
             raise LookupError("계정을 찾을 수 없습니다. 다시 로그인하세요.")
         db.execute("DELETE FROM coaching_requests WHERE requested_at<=?", (cutoff,))

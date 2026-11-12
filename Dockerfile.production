@@ -1,0 +1,32 @@
+FROM node:24-bookworm-slim AS web-build
+WORKDIR /build
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY sleep_frontend/package.json sleep_frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY sleep_frontend/ ./
+RUN npm run build
+
+FROM node:24-bookworm-slim AS node-runtime
+FROM python:3.12-slim-bookworm AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libatomic1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 SLEEP_DB_BACKEND=postgresql COACHING_ENGINE=rules \
+    SLEEP_DESKTOP_ALARMS=0 SLEEP_API_URL=http://127.0.0.1:8011 PORT=10000 \
+    DALJAM_DEMO_ONLY=0 DALJAM_ENV=production
+COPY requirements-server.txt requirements-postgres.txt ./
+RUN pip install --no-cache-dir -r requirements-server.txt \
+    && groupadd --gid 10001 daljam && useradd --uid 10001 --gid daljam --create-home daljam
+COPY api.py app_database.py postgres_db.py postgres_migrate.py health_records.py export_times.py json_sleep.py health_export_kit.py \
+    sleep_accounts.py health_sync.py coaching_service.py coaching_free.py coaching_patterns.py \
+    coaching_rules.py history_service.py service_limits.py sleep_alarms.py backup_policy.py production_policy.py ./
+COPY migrations/postgresql/ ./migrations/postgresql/
+COPY deploy/supervisor.py ./deploy/supervisor.py
+COPY --from=web-build --chown=daljam:daljam /build/.next/standalone/ ./web/
+COPY --from=web-build --chown=daljam:daljam /build/.next/static/ ./web/.next/static/
+COPY --from=web-build --chown=daljam:daljam /build/public/ ./web/public/
+USER daljam
+EXPOSE 10000
+CMD ["python", "deploy/supervisor.py"]

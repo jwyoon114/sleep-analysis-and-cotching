@@ -18,7 +18,7 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
   if (!["GET", "HEAD"].includes(request.method)) {
     const origin = request.headers.get("origin");
     let sameOrigin = false;
-    try { sameOrigin = !!origin && new URL(origin).host === request.headers.get("host"); } catch { /* Reject malformed origins. */ }
+    try { sameOrigin = !!origin && (process.env.DALJAM_PUBLIC_ORIGIN ? new URL(origin).origin === process.env.DALJAM_PUBLIC_ORIGIN : new URL(origin).host === request.headers.get("host")); } catch { /* Reject malformed origins. */ }
     if (!sameOrigin) return fail("이 화면에서 다시 요청해 주세요.", 403);
   }
   const jar = await cookies();
@@ -37,13 +37,30 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("Content-Type", contentType);
     if (!publicEndpoint && token) headers.set("Authorization", `Bearer ${token}`);
-    const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer();
-    if (body && body.byteLength > LIMIT) return fail("파일은 4MiB 이하여야 합니다.", 413);
+    let body: Uint8Array<ArrayBuffer> | undefined;
+    if (!["GET", "HEAD"].includes(request.method) && request.body) {
+      const reader = request.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > LIMIT) {
+          await reader.cancel();
+          return fail("파일은 4MiB 이하여야 합니다.", 413);
+        }
+        chunks.push(value);
+      }
+      body = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+    }
     const upstream = await fetch(url, {method: request.method, headers, body, cache: "no-store", signal: controller.signal, redirect: "error"});
     const result = await upstream.json();
     if (endpoint === "auth/login" && upstream.ok) {
       if (typeof result.token !== "string") return fail("로그인 응답을 확인할 수 없습니다.", 502);
-      jar.set(COOKIE, result.token, {httpOnly: true, secure: request.nextUrl.protocol === "https:" || process.env.VERCEL === "1", sameSite: "strict", path: "/", maxAge: 86400});
+      jar.set(COOKIE, result.token, {httpOnly: true, secure: !!process.env.DALJAM_PUBLIC_ORIGIN || request.nextUrl.protocol === "https:" || process.env.VERCEL === "1", sameSite: "strict", path: "/", maxAge: 86400});
       delete result.token;
     }
     if (upstream.status === 401 && !publicEndpoint || endpoint === "auth/logout" && upstream.ok || endpoint === "auth/me" && ["PATCH", "DELETE"].includes(request.method) && upstream.ok) jar.delete(COOKIE);

@@ -86,7 +86,11 @@ class HealthSyncTests(unittest.TestCase):
   self.token=health_sync.pair('alice','health_connect','watch','Watch',path=self.db)['sync_token'];self.snapshot['provider']='health_connect'
   self.sync();changed=copy.deepcopy(self.snapshot)
   second=copy.deepcopy(changed['records'][0]);second['id']='another-night';second['start']='2026-11-05T23:00:00+09:00';second['end']='2026-11-06T07:00:00+09:00';second['segments']=[{'start':second['start'],'end':second['end'],'stage':'core'}]
-  changed['records']=[second];result=self.sync(changed)
+  changed['records']=[second]
+  partial=self.sync(changed)
+  self.assertEqual(partial['removed_sessions'],0)
+  self.assertEqual(len(list_sessions('alice',self.db)),2)
+  changed['complete_snapshot']=True;result=self.sync(changed)
   self.assertEqual(result['removed_sessions'],1);self.assertEqual(len(list_sessions('alice',self.db)),1)
 
 class HealthAPITests(unittest.TestCase):

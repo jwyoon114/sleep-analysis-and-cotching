@@ -1,7 +1,16 @@
 **
 !Dockerfile
+!Dockerfile.production
+!requirements-server.txt
+!requirements-postgres.txt
+!*.py
+!migrations/
+!migrations/postgresql/
+!migrations/postgresql/*.sql
+!migrations/postgresql/*.json
 !deploy/
 !deploy/start-demo.mjs
+!deploy/supervisor.py
 !sleep_frontend/
 !sleep_frontend/package.json
 !sleep_frontend/package-lock.json

@@ -1,4 +1,5 @@
 """Coaching for account-owned wearable sleep records."""
+from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
@@ -90,7 +91,7 @@ def latest_coaching(account_id, session_id, db_path=None):
 
 def delete_coaching(account_id, session_id, coaching_id, db_path=None):
     with closing(connect(db_path)) as db, db:
-        result = db.execute("INSERT OR IGNORE INTO trash_coaching SELECT c.id, c.account_id, ? FROM coaching c JOIN sessions s ON s.id=c.session_id WHERE c.id=? AND c.account_id=? AND c.session_id=? AND s.subject=? AND NOT EXISTS(SELECT 1 FROM trash_sessions t WHERE t.session_id=s.id)", (datetime.now(timezone.utc).isoformat(), coaching_id, account_id, session_id, account_id))
+        result = db.execute("INSERT INTO trash_coaching SELECT c.id, c.account_id, ? FROM coaching c JOIN sessions s ON s.id=c.session_id WHERE c.id=? AND c.account_id=? AND c.session_id=? AND s.subject=? AND NOT EXISTS(SELECT 1 FROM trash_sessions t WHERE t.session_id=s.id) ON CONFLICT DO NOTHING", (datetime.now(timezone.utc).isoformat(), coaching_id, account_id, session_id, account_id))
         return result.rowcount > 0
 
 
@@ -240,7 +241,7 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     coaching_id = str(uuid4())
     with closing(connect(db_path)) as db, db:
         # Recheck record ownership and availability before saving the answer.
-        db.execute("BEGIN IMMEDIATE")
+        begin_write(db)
         placeholders = ",".join("?" for _ in referenced)
         active = db.execute(f"SELECT count(*) FROM sessions WHERE subject=? AND id IN ({placeholders}) AND NOT EXISTS(SELECT 1 FROM trash_sessions WHERE session_id=sessions.id)", (account_id, *referenced)).fetchone()[0]
         if active != len(referenced):

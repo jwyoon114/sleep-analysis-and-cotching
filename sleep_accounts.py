@@ -1,4 +1,5 @@
 """Local account authentication shared by Streamlit and the mobile API."""
+from app_database import begin_write, secure_delete, table_names
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -30,7 +31,10 @@ def validate_password(password):
         raise ValueError("비밀번호는 10~128자로 입력하세요.")
 
 
-def register(username, password, db_path=None):
+def register(username, password, db_path=None, *, consent=None):
+    from production_policy import is_production, POLICY_VERSION
+    if is_production() and consent != POLICY_VERSION:
+        raise ValueError("최신 개인정보·건강정보 수집 동의가 필요합니다.")
     username = validate_username(username)
     validate_password(password)
     with closing(connect(db_path)) as db, db:
@@ -39,6 +43,9 @@ def register(username, password, db_path=None):
         account_id = str(uuid4())
         salt = secrets.token_hex(16)
         db.execute("INSERT INTO accounts VALUES(?,?,?,?,?)", (account_id, username, password_hash(password, salt), salt, datetime.now(timezone.utc).isoformat()))
+        if is_production():
+            now = datetime.now(timezone.utc).isoformat()
+            db.execute("INSERT INTO account_consents VALUES(?,?,?,?,?,?)", (account_id, consent, now, now, now, now))
     return {"id": account_id, "username": username}
 
 
@@ -106,7 +113,7 @@ def update_account(account_id, current_password, new_username=None, new_password
         raise ValueError("변경할 아이디나 비밀번호를 입력하세요.")
     with closing(connect(db_path)) as db:
         with db:
-            db.execute("BEGIN IMMEDIATE")
+            begin_write(db)
             row, error = _verify_account_action(db, account_id, current_password)
             if error is None:
                 username = username if username is not None else row["username"]
@@ -119,7 +126,7 @@ def update_account(account_id, current_password, new_username=None, new_password
                     hashed = password_hash(new_password, salt) if new_password is not None else row["password_hash"]
                     db.execute("UPDATE accounts SET username=?, password_hash=?, salt=? WHERE id=?", (username, hashed, salt, account_id))
                     db.execute("DELETE FROM auth_tokens WHERE account_id=?", (account_id,))
-                    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='health_connections'").fetchone():
+                    if 'health_connections' in table_names(db):
                         db.execute("DELETE FROM health_connections WHERE account_id=?", (account_id,))
         if error is not None:
             raise error
@@ -129,7 +136,7 @@ def update_account(account_id, current_password, new_username=None, new_password
 def erase_account_rows(db, account_id):
     """Erase only this account, including trash and observations outside sessions."""
     from history_service import erase_coaching_rows
-    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = table_names(db)
     for table in ('sleep_alarm_fires', 'sleep_alarm_settings'):
         if table in tables:
             db.execute('DELETE FROM '+table+' WHERE account_id=?',(account_id,))
@@ -154,10 +161,12 @@ def erase_account_rows(db, account_id):
 def delete_account(account_id, current_password, confirmation, db_path=None):
     if confirmation != "계정 삭제":
         raise ValueError("확인 문구 ‘계정 삭제’를 정확히 입력하세요.")
+    from app_database import require_backup_policy
+    require_backup_policy(db_path)
     with closing(connect(db_path)) as db:
-        db.execute("PRAGMA secure_delete=ON")
+        secure_delete(db)
         with db:
-            db.execute("BEGIN IMMEDIATE")
+            begin_write(db)
             row, error = _verify_account_action(db, account_id, current_password)
             if error is None:
                 erase_account_rows(db, account_id)

@@ -33,10 +33,12 @@ def free_port():
 class DemoHTTPTests(unittest.TestCase):
     def test_demo_isolation_and_normal_mode_preserved(self):
         node = os.getenv('DALJAM_TEST_NODE') or shutil.which('node')
-        server = ROOT / 'sleep_frontend/.next/standalone/server.js'
+        dist = os.getenv('DALJAM_TEST_DIST_DIR', '.next')
+        self.assertIn(dist, ('.next', '.next-production'))
+        server = ROOT / 'sleep_frontend' / dist / 'standalone/server.js'
         self.assertTrue(node and server.is_file(), 'Build standalone first')
         shutil.copytree(ROOT / 'sleep_frontend/public', server.parent / 'public', dirs_exist_ok=True)
-        shutil.copytree(ROOT / 'sleep_frontend/.next/static', server.parent / '.next/static', dirs_exist_ok=True)
+        shutil.copytree(ROOT / 'sleep_frontend' / dist / 'static', server.parent / dist / 'static', dirs_exist_ok=True)
         upstream_requests = []
 
         class Stub(BaseHTTPRequestHandler):

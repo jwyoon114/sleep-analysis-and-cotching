@@ -11,6 +11,8 @@ BACKUP_DAYS = 30
 
 
 def managed_backups(db_path=None):
+    from app_database import require_backup_policy
+    require_backup_policy(db_path)
     path = Path(db_path or health_records.DB_PATH).resolve()
     # Restrict operations to recognized app backups in the DB's own directory.
     candidates = set(path.parent.glob(path.name + ".before-accounts-*.bak"))
@@ -19,6 +21,17 @@ def managed_backups(db_path=None):
 
 
 def maintain_backups(db_path=None, now=None):
+    from app_database import uses_postgres
+    if uses_postgres(db_path):
+        from production_policy import backup_policy_ready
+        if backup_policy_ready():
+            return {"status": "managed_pitr", "backup_count": None, "retention_days": 7,
+                    "pending": False, "permanent_deletion_available": True,
+                    "message": "운영 DB에서 삭제된 자료는 복구용 백업에서 최대 7일 후 만료됩니다. 수동 백업은 생성하지 않습니다."}
+        return {"status": "cloud_policy_pending", "backup_count": None,
+                "retention_days": None, "pending": True,
+                "permanent_deletion_available": False,
+                "message": "클라우드 백업의 보관·삭제 정책 확인이 필요합니다. 영구 삭제와 자동 만료는 보류됩니다."}
     from history_service import erase_coaching_rows
     from sleep_accounts import erase_account_rows
     now = now or datetime.now(timezone.utc)
@@ -69,6 +82,11 @@ def maintain_backups(db_path=None, now=None):
 
 
 def create_backup(db_path=None):
+    from app_database import uses_postgres, BackupPolicyPending
+    if uses_postgres(db_path):
+        raise BackupPolicyPending("클라우드 수동 백업은 지원하지 않습니다. 관리형 복구 기능을 사용하세요.")
+    from app_database import require_backup_policy
+    require_backup_policy(db_path)
     from uuid import uuid4
     path = Path(db_path or health_records.DB_PATH).resolve()
     target = path.with_name(path.name + ".managed-" + uuid4().hex + ".bak")

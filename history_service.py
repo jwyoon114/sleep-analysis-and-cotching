@@ -1,4 +1,5 @@
 """Account-scoped trash, restoration, retention and calendar comparisons."""
+from app_database import begin_write, secure_delete, table_names
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 import json
@@ -32,7 +33,7 @@ def restore_record(kind, record_id, subject, db_path=None):
 
 
 def erase_coaching_rows(db, coaching_id, subject):
-    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = table_names(db)
     if "coaching" not in tables:
         return False
     row = db.execute("SELECT 1 FROM coaching WHERE id=? AND account_id=?", (coaching_id, subject)).fetchone()
@@ -49,17 +50,19 @@ def purge_record(kind, record_id, subject, db_path=None):
     """Only trashed records can be permanently deleted by a user."""
     if kind not in {"session", "coaching"}:
         raise ValueError("잘못된 기록 종류입니다.")
+    from app_database import require_backup_policy
+    require_backup_policy(db_path)
     with closing(connect(db_path)) as db:
-        db.execute("PRAGMA secure_delete=ON")
+        secure_delete(db)
         with db:
-            db.execute("BEGIN IMMEDIATE")
+            begin_write(db)
             table, column, owner = ("trash_sessions", "session_id", "subject") if kind == "session" else ("trash_coaching", "coaching_id", "account_id")
             if not db.execute(f"SELECT 1 FROM {table} WHERE {column}=? AND {owner}=?", (record_id, subject)).fetchone():
                 return False
             erase = erase_session_rows if kind == "session" else erase_coaching_rows
             if not erase(db, record_id, subject):
                 return False
-            db.execute("INSERT OR REPLACE INTO permanent_deletions VALUES(?,?,?,?)", (kind, record_id, subject, datetime.now(timezone.utc).isoformat()))
+            db.execute("INSERT INTO permanent_deletions VALUES(?,?,?,?) ON CONFLICT(kind,record_id,subject) DO UPDATE SET deleted_at=excluded.deleted_at", (kind, record_id, subject, datetime.now(timezone.utc).isoformat()))
     # A durable deletion ledger also sanitizes future backups and enables retries
     # if one existing snapshot is temporarily locked. No health payload is stored.
     from backup_policy import maintain_backups
@@ -68,6 +71,13 @@ def purge_record(kind, record_id, subject, db_path=None):
 
 
 def expire_trash(subject, db_path=None, now=None):
+    from app_database import uses_postgres
+    if uses_postgres(db_path):
+        # Retain trash until the cloud backup deletion policy is approved.
+        # Do not let blocked expiry make every authenticated request fail.
+        from production_policy import backup_policy_ready
+        if not backup_policy_ready():
+            return 0
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=RETENTION_DAYS)
     # Expiry needs identifiers and timestamps, never full health payloads.
     with closing(connect(db_path)) as db:

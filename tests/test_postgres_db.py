@@ -263,7 +263,7 @@ class SQLiteIsolationTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "synthetic.sqlite3"
-            with patch.dict(os.environ, {"DATABASE_URL": TEST_URL}):
+            with patch.dict(os.environ, {}, clear=True):
                 with patch.object(pg, "_driver_modules", side_effect=AssertionError("Postgres must remain opt-in")) as driver:
                     account = sleep_accounts.register(
                         "synthetic-local-user", "synthetic-local-password", path

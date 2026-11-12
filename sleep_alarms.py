@@ -1,4 +1,5 @@
 """Account-owned daily PC alarms; persisted claims prevent duplicate ringing."""
+from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import os
@@ -15,6 +16,8 @@ _worker = None
 
 def connect(db_path=None):
     db = health_records.connect(db_path)
+    if getattr(db, 'is_postgres', False):
+        return db
     db.executescript('''
     CREATE TABLE IF NOT EXISTS sleep_alarm_settings(
       account_id TEXT PRIMARY KEY REFERENCES accounts(id), bedtime TEXT NOT NULL,
@@ -74,7 +77,7 @@ def tick(now=None, db_path=None, notifier=notify):
     now = now or datetime.now(timezone.utc)
     due = []
     with closing(connect(db_path)) as db, db:
-        db.execute('BEGIN IMMEDIATE')
+        begin_write(db)
         for row in db.execute('SELECT * FROM sleep_alarm_settings WHERE enabled=1'):
             local = now.astimezone(ZoneInfo(row['timezone']))
             # Only the current minute rings; startup/resume never replays old alarms.
@@ -82,7 +85,7 @@ def tick(now=None, db_path=None, notifier=notify):
             if instant.astimezone(timezone.utc) < datetime.fromisoformat(row['updated_at']): continue
             for kind in ('bedtime','wake_time'):
                 if row[kind] != local.strftime('%H:%M'): continue
-                inserted = db.execute('INSERT OR IGNORE INTO sleep_alarm_fires VALUES(?,?,?,?)',
+                inserted = db.execute('INSERT INTO sleep_alarm_fires VALUES(?,?,?,?) ON CONFLICT DO NOTHING',
                     (row['account_id'],kind,local.date().isoformat(),now.isoformat())).rowcount
                 if inserted: due.append(kind)
         db.execute('DELETE FROM sleep_alarm_fires WHERE fired_at<?',((now-timedelta(days=90)).isoformat(),))
