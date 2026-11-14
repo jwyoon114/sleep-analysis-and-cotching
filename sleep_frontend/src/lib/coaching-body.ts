@@ -263,10 +263,40 @@ function styledBody(data: PresentationV1, tone: CoachingTone): string {
   return sections.join("\n\n");
 }
 
-export function renderCoachingBody(savedBody: string, context: unknown, tone: CoachingTone | null): string {
-  if (tone === null || !isObject(context) || context.engine !== "rules") return savedBody;
+function verifiedCoachingPresentation(savedBody: string, context: unknown): PresentationV1 | null {
+  if (!isObject(context) || context.engine !== "rules") return null;
   const data = context.presentation;
   // Reproduce the saved body to detect dropped notes or mismatched display values without parsing it.
-  if (!isPresentation(data) || originalBody(data) !== savedBody) return savedBody;
-  return styledBody(data, tone);
+  return isPresentation(data) && originalBody(data) === savedBody ? data : null;
+}
+
+export function renderCoachingBody(savedBody: string, context: unknown, tone: CoachingTone | null): string {
+  if (tone === null) return savedBody;
+  const data = verifiedCoachingPresentation(savedBody, context);
+  return data ? styledBody(data, tone) : savedBody;
+}
+
+export function coachingDataNotes(savedBody: string, context: unknown): string[] {
+  const data = verifiedCoachingPresentation(savedBody, context);
+  if (data === null) return [];
+
+  const notes: string[] = [];
+  if (!data.observation.asleep.valid) {
+    notes.push("이 조언에 사용된 기록에서는 수면 시간을 확인할 수 없어요.");
+  } else if (!data.observation.awake.valid) {
+    notes.push("이 조언에 사용된 기록에서는 각성 시간을 확인할 수 없어요.");
+  }
+  if (data.limitation_ids.includes("unrecorded_segments")) {
+    notes.push("이 조언에 사용된 수면 기록에는 기록이 비어 있는 구간이 있어요.");
+  }
+  const { comparison, recent, previous } = data.patterns;
+  if (comparison.status === "invalid_reference") {
+    notes.push("선택한 기록의 날짜와 시간 범위를 확인해야 두 기간을 비교할 수 있어요.");
+  } else if (comparison.status === "insufficient_days" && recent && previous) {
+    notes.push(
+      "기간별 평균을 비교하려면 최근 7일과 그 직전 7일에 수면 시간을 확인할 수 있는 날이 각각 3일 이상 필요해요. "
+      + "이 조언에 사용된 기록일은 최근 기간 " + recent.valid_days + "일, 직전 기간 " + previous.valid_days + "일이에요.",
+    );
+  }
+  return notes;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderCoachingBody } from "../src/lib/coaching-body.ts";
+import { coachingDataNotes, renderCoachingBody } from "../src/lib/coaching-body.ts";
 import { CHARACTERS, MBTI_TYPES, getCoachingTone } from "../src/lib/coaching-preview.ts";
 
 // Synthetic examples of v1 payloads and their original rule-engine text.
@@ -188,6 +188,35 @@ const fixtures = {
 function render(fixture, mbti) {
   return renderCoachingBody(fixture.coaching, fixture.context, getCoachingTone(mbti));
 }
+
+test("saved guidance explains insufficient comparisons using the original counts", () => {
+  const {coaching,context} = fixtures.insufficient;
+  const notes = coachingDataNotes(coaching,context);
+  assert.ok(notes.some(note => /각각 3일 이상/.test(note) && /최근 기간 1일, 직전 기간 0일/.test(note)));
+  assert.ok(notes.some(note => /각성 시간을 확인할 수 없어요/.test(note)));
+  assert.ok(notes.some(note => /기록이 비어 있는 구간/.test(note)));
+  for (const fixture of [fixtures.free, fixtures.zero]) {
+    assert.deepEqual(coachingDataNotes(fixture.coaching,fixture.context), []);
+  }
+});
+
+test("missing measurements and an invalid date range receive separate guidance", () => {
+  const {coaching,context} = fixtures.unavailable;
+  const notes = coachingDataNotes(coaching,context);
+  assert.ok(notes.some(note => /수면 시간을 확인할 수 없어요/.test(note)));
+  assert.ok(notes.some(note => /날짜와 시간 범위/.test(note)));
+  assert.ok(notes.every(note => !note.includes("3일")));
+});
+
+test("historical or unverifiable coaching cannot supply new data notes", () => {
+  const {coaching,context} = fixtures.insufficient;
+  const incomplete = structuredClone(context);
+  incomplete.presentation.limitation_ids = incomplete.presentation.limitation_ids.filter(id => id !== "unrecorded_segments");
+  for (const value of [null, {engine:"openai"}, {engine:"rules"}, incomplete]) {
+    assert.deepEqual(coachingDataNotes(coaching,value), []);
+  }
+  assert.deepEqual(coachingDataNotes(coaching + "\n추가 안내",context), []);
+});
 
 test("all sixteen bodies and 64 style/character combinations preserve facts and action", () => {
   const { free } = fixtures;

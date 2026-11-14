@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import PwaInstall from "@/components/pwa-install";
 import "./globals.css";
+import "./mobile-ui.css";
 
 export const metadata: Metadata = {
   title: "달잠 · 나의 수면 리포트",
