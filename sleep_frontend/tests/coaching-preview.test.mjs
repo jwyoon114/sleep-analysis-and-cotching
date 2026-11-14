@@ -92,7 +92,7 @@ test("changing an animal does not select or alter an MBTI preset", () => {
   const before = createCoachingPreview("INFP");
   for (const {id} of CHARACTERS) getCharacter(id);
   assert.deepEqual(createCoachingPreview("INFP"), before);
-  assert.deepEqual(CHARACTERS.map(c => c.id), ["cat", "rabbit", "bear", "owl"]);
+  assert.deepEqual(CHARACTERS.map(c => c.id), ["cat", "raccoon", "dog", "rabbit"]);
   assert.equal(new Set(CHARACTERS.map(c => c.emoji)).size, 4);
 });
 

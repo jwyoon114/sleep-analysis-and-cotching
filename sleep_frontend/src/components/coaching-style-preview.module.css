@@ -251,8 +251,8 @@
 }
 
 .character[data-character="rabbit"] { background: #fff1f4; border-color: #f4e0e7; }
-.character[data-character="bear"] { background: #faf0e5; border-color: #eee1d2; }
-.character[data-character="owl"] { background: #edf4ed; border-color: #dfebdf; }
+.character[data-character="dog"] { background: #faf0e5; border-color: #eee1d2; }
+.character[data-character="raccoon"] { background: #edf4ed; border-color: #dfebdf; }
 
 .character > span {
   font-size: 40px;

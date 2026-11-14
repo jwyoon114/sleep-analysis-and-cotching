@@ -1,5 +1,5 @@
-import {ArrowRight, CalendarDays, LoaderCircle, Moon, Plus, RotateCcw, Sparkles, TrendingUp} from "lucide-react";
-import {minutes, shortDate, type Coaching, type SleepRecord} from "@/lib/sleep";
+import {ArrowRight, CalendarDays, LoaderCircle, Moon, Plus, RotateCcw, Sparkles} from "lucide-react";
+import {clock, minutes, shortDate, type Coaching, type SleepRecord} from "@/lib/sleep";
 import SleepTimeline from "./sleep-timeline";
 
 type Props = {
@@ -11,7 +11,6 @@ type Props = {
   onRecord: () => void;
   onCoaching: () => void;
   onRetryCoaching: () => void;
-  onCompare: () => void;
   onMorningPlan: () => void;
 };
 
@@ -21,7 +20,7 @@ function coachingExcerpt(text: string) {
   return (suggestion?.replace(/^실천 제안\r?\n/, "") ?? paragraphs[0]).trim();
 }
 
-export default function SleepDashboard({record, recordsLoading, coaching, coachingStatus, onUpload, onRecord, onCoaching, onRetryCoaching, onCompare, onMorningPlan}: Props) {
+export default function SleepDashboard({record, recordsLoading, coaching, coachingStatus, onUpload, onRecord, onCoaching, onRetryCoaching, onMorningPlan}: Props) {
   const duration = record && Number.isFinite(record.asleep_minutes) && record.asleep_minutes >= 0
     ? minutes(record.asleep_minutes)
     : "기록 없음";
@@ -37,7 +36,7 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
             {record && Number.isFinite(Date.parse(record.start)) && <p>{shortDate(record.start)} 수면 기록</p>}
           </div>
         </div>
-        {record && <div className="dashboard-duration"><span>총 수면 시간</span><strong>{duration}</strong></div>}
+        {record && <div className="dashboard-duration"><span>총 수면 시간</span><strong>{duration}</strong><span>{clock(record.start)} – {clock(record.end)}</span></div>}
       </header>
       {record ? <>
         <SleepTimeline key={record.analysis_id} record={record} compact/>
@@ -48,7 +47,7 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
         : <div className="dashboard-empty">
           <p>아직 표시할 수면 기록이 없어요.</p>
           <p>수면 기록을 추가하면 시간에 따른 수면 단계 변화를 볼 수 있어요.</p>
-          <button type="button" className="button secondary" onClick={onUpload}><Plus size={16}/>첫 수면 기록 추가</button>
+          <button type="button" className="button secondary" onClick={onUpload}><Plus size={16}/>수면 데이터 가져오기</button>
         </div>}
     </section>
 
@@ -71,9 +70,8 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
     </section>
 
     <nav className="dashboard-feature-grid" aria-label="대시보드 기능">
-      <button type="button" className="dashboard-feature" onClick={onCompare}><TrendingUp size={21} aria-hidden="true"/><span>기록 비교</span></button>
       <button type="button" className="dashboard-feature" onClick={onCoaching}><Sparkles size={21} aria-hidden="true"/><span>AI 코칭</span></button>
-      <button type="button" className="dashboard-feature" onClick={onMorningPlan}><CalendarDays size={21} aria-hidden="true"/><span>내일 아침 계획</span><small>준비 중</small></button>
+      <button type="button" className="dashboard-feature" onClick={onMorningPlan}><CalendarDays size={21} aria-hidden="true"/><span>내일 계획</span></button>
     </nav>
   </div>;
 }
