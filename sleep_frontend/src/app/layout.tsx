@@ -3,6 +3,7 @@ import PwaInstall from "@/components/pwa-install";
 import "./globals.css";
 import "./mobile-ui.css";
 import "./personalization.css";
+import "./sleep-plan.css";
 
 export const metadata: Metadata = {
   title: "달잠 · 나의 수면 리포트",

@@ -9,7 +9,7 @@ import {coachingDataNotes} from "@/lib/coaching-body";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
 import SleepDashboard from "./sleep-dashboard";
-import SleepAlarms from "./sleep-alarms";
+import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
 import MobileProfile from "./mobile-profile";
 import {Onboarding, ProfilePreferences} from "./personalization";
@@ -82,7 +82,6 @@ function Auth({onLogin,onDemo,error:connectionError,status}:{onLogin:(u:User)=>v
 export default function SleepApp() {
   const [boot,setBoot]=useState(true),[user,setUser]=useState<User|null>(null),[demo,setDemo]=useState(false);
   const [page,setPage]=useState<Page>("dashboard"),[records,setRecords]=useState<SleepRecord[]>([]),[selected,setSelected]=useState("");
-  const [visitedPlan,setVisitedPlan]=useState(false);
   const [coachingBack,setCoachingBack]=useState<"dashboard"|"recordDetail">("dashboard");
   const [coachHistory,setCoachHistory]=useState<CoachingHistory|null>(null);
   const [coachRequest,setCoachRequest]=useState<CoachingRequestState|null>(null);
@@ -107,7 +106,7 @@ export default function SleepApp() {
   const latest=records[0];
   const coachingRecordId=page==="dashboard" ? latest?.analysis_id : selected;
   const healthSynced=useCallback(()=>setRevision(n=>n+1),[]);
-  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setVisitedPlan(false);setCoachingBack("dashboard");setBackup(null);setUpload(false);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
+  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUpload(false);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
   useEffect(()=>{if(new URLSearchParams(window.location.search).get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
   useEffect(()=>{
     if(!accountId||demo)return;
@@ -218,7 +217,6 @@ export default function SleepApp() {
     }finally{setBusy(false);}
   }
   function navigate(p:Page){
-    if(p==="plan")setVisitedPlan(true);
     if(p==="coaching")setCoachingBack(page==="recordDetail"?"recordDetail":"dashboard");
     setPage(p);setError("");
     window.scrollTo(0,0);
@@ -319,11 +317,7 @@ export default function SleepApp() {
         </select></label>
       </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced}/>}/>
     </div>
-    {visitedPlan&&<div className="plan-screen" hidden={page!=="plan"}>
-      <SleepAlarms key={user.id} coaching={saved} demo={demo}/>
-      <section className="panel plan-status"><h2>취침 전 알림</h2><p>휴대폰 알림은 준비 중이에요.</p></section>
-      <section className="panel plan-status"><h2>내일 아침 계획</h2><p>아침 계획 작성과 저장은 준비 중이에요.</p></section>
-    </div>}
+    <SleepPlan key={user.id} active={page==="plan"} coaching={saved} demo={demo}/>
 
     {page==="coaching"&&<>
       {records.length ? <>

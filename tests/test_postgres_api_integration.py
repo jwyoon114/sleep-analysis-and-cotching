@@ -214,6 +214,25 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                         raise RollbackProbe()
                 self.assertEqual(len(health_records.list_sessions(alice)), 2)
 
+            with self.subTest('morning plans persist with PostgreSQL and remain account-owned'):
+                client.post('/alarms', headers=a, json={
+                    'bedtime': '22:00', 'wake_time': '00:00', 'timezone': 'Asia/Seoul', 'enabled': False,
+                }).raise_for_status()
+                overview = client.get('/plans', headers=a).json()
+                self.assertEqual(client.get('/plans/bedtime', headers=a).json()['status'], 'insufficient')
+                today = overview['today']
+                saved = client.post('/plans/'+today, headers=a, json={'activities': [{'id': 'pg', 'title': 'PG 시험'}]})
+                saved.raise_for_status()
+                self.assertEqual(client.get('/plans', headers=b).json()['today_plan'], None)
+                self.assertEqual(client.post('/plans/morning-view', headers=a).json()['plan']['date'], today)
+                self.assertIsNone(client.post('/plans/morning-view', headers=a).json()['plan'])
+                marked = client.patch('/plans/'+today, headers=a, json={'id': 'pg', 'completed': True})
+                self.assertTrue(marked.json()['plan']['activities'][0]['completed'])
+                with closing(health_records.connect()) as db:
+                    self.assertIsNotNone(db.execute('SELECT first_shown_at FROM morning_plans WHERE account_id=? AND wake_date=?',
+                                                    (alice, today)).fetchone()[0])
+                self.assertEqual(client.delete('/plans/'+today, headers=b).status_code, 404)
+
             with self.subTest('atomic request caps and alarm persistence'):
                 def reserve(_):
                     try:
