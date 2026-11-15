@@ -1,8 +1,9 @@
 "use client";
 
 import {useId, useLayoutEffect, useRef, useState, type KeyboardEvent} from "react";
-import {CHARACTERS, MBTI_TYPES, type MbtiType} from "@/lib/coaching-preview";
-import {changeIntensity, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft} from "@/lib/personalization";
+import {Circle, Heart, MessageCircle, MessagesSquare, Moon, Shield, Zap, type LucideIcon} from "lucide-react";
+import {CHARACTERS, MBTI_TYPES, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
+import {CHARACTER_THEMES, changeIntensity, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft} from "@/lib/personalization";
 
 export const STEPS = ["MBTI", "말투", "코칭 강도", "캐릭터"] as const;
 export type Step = typeof STEPS[number];
@@ -57,7 +58,7 @@ export function MbtiWheel({value,onChange}:{value:MbtiType|null;onChange:(value:
 }
 
 function Choices<T extends string>({label,options,value,onChange}:{
-  label:string; options:readonly {value:T;label:string;icon?:string}[];
+  label:string; options:readonly {value:T;label:string;Icon:LucideIcon}[];
   value:T|undefined;onChange:(value:T)=>void;
 }) {
   const name=useId();
@@ -65,7 +66,7 @@ function Choices<T extends string>({label,options,value,onChange}:{
     <legend className="sr-only">{label}</legend>
     {options.map(option=><label key={option.value} className="preference-choice">
       <input type="radio" name={name} value={option.value} checked={value===option.value} onChange={()=>onChange(option.value)}/>
-      {option.icon&&<span aria-hidden="true">{option.icon}</span>}{option.label}
+      <span className="preference-option-icon"><option.Icon size={19} aria-hidden="true"/></span>{option.label}
     </label>)}
   </fieldset>;
 }
@@ -89,7 +90,7 @@ function IntensityField({draft,onChange}:{draft:Draft;onChange:(change:Partial<D
   }
 
   return <>
-    <Choices label="코칭 강도" options={INTENSITY_OPTIONS} value={draft.intensity} onChange={value=>{
+    <Choices label="코칭 강도" options={intensityChoices} value={draft.intensity} onChange={value=>{
       onChange(changeIntensity(value));
       if(value==="direct")ask();
     }}/>
@@ -99,6 +100,7 @@ function IntensityField({draft,onChange}:{draft:Draft;onChange:(change:Partial<D
     </p>}
     <dialog ref={dialog} className="preference-dialog" aria-labelledby={id+"-title"} aria-describedby={id+"-description"}
       onClose={()=>{if(!dialog.current?.open)opener.current?.focus();}}>
+      <span className="consent-icon"><Zap size={22} aria-hidden="true"/></span>
       <h2 id={id+"-title"}>비속어 사용을 허용할까요?</h2>
       <p id={id+"-description"}>기본값은 미허용이에요. 어떤 강도에서도 인신공격이나 차별적 표현은 허용하지 않아요.</p>
       <div className="preference-actions">
@@ -109,13 +111,31 @@ function IntensityField({draft,onChange}:{draft:Draft;onChange:(change:Partial<D
   </>;
 }
 
-const animals = CHARACTERS.map(({id,name,emoji})=>({value:id,label:name,icon:emoji}));
+const speechIcons = {polite:MessageCircle, casual:MessagesSquare};
+const intensityIcons = {gentle:Heart, firm:Shield, direct:Zap};
+const speechChoices = SPEECH_OPTIONS.map(option=>({...option,Icon:speechIcons[option.value]}));
+const intensityChoices = INTENSITY_OPTIONS.map(option=>({...option,Icon:intensityIcons[option.value]}));
+
+function CharacterChoices({value,onChange}:{value:CharacterId|undefined;onChange:(value:CharacterId)=>void}) {
+  const name=useId();
+  return <fieldset className="preference-choices character-choices">
+    <legend className="sr-only">캐릭터</legend>
+    {CHARACTERS.map(character=><label key={character.id} className="preference-choice character-choice" data-daljam-theme={character.id}>
+      <span className="character-choice-artwork" aria-hidden="true"/>
+      <input type="radio" name={name} value={character.id} checked={value===character.id} onChange={()=>onChange(character.id)}/>
+      <span className="character-choice-name">
+        {CHARACTER_THEMES[character.id].moon==="full"?<Circle size={13} fill="currentColor" aria-hidden="true"/>:<Moon size={13} fill="currentColor" aria-hidden="true"/>}
+        <span>{character.name}</span>
+      </span>
+    </label>)}
+  </fieldset>;
+}
 
 export function PreferenceField({step,draft,onChange}:{step:Step;draft:Draft;onChange:(change:Partial<Draft>)=>void}) {
   switch(step){
     case "MBTI": return <MbtiWheel value={draft.mbti} onChange={mbti=>onChange({mbti})}/>;
-    case "말투": return <Choices label={step} options={SPEECH_OPTIONS} value={draft.speech} onChange={speech=>onChange({speech})}/>;
+    case "말투": return <Choices label={step} options={speechChoices} value={draft.speech} onChange={speech=>onChange({speech})}/>;
     case "코칭 강도": return <IntensityField draft={draft} onChange={onChange}/>;
-    case "캐릭터": return <Choices label={step} options={animals} value={draft.character} onChange={character=>onChange({character})}/>;
+    case "캐릭터": return <CharacterChoices value={draft.character} onChange={character=>onChange({character})}/>;
   }
 }

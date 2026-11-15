@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useRef,useState} from "react";
-import {Circle, Moon} from "lucide-react";
+import {ChevronRight, Circle, Moon} from "lucide-react";
 import {CHARACTERS} from "@/lib/coaching-preview";
 import {CHARACTER_THEMES, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft, type Personalization, type Preferences} from "@/lib/personalization";
 import {PreferenceField, STEPS, type Step} from "./personalization-fields";
@@ -26,7 +26,10 @@ export function Onboarding({onComplete,onLogout}:{
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const heading=useRef<HTMLHeadingElement>(null);
-  useEffect(()=>{heading.current?.focus();},[step]);
+  useEffect(()=>{
+    heading.current?.focus({preventScroll:true});
+    window.scrollTo(0,0);
+  },[step]);
   const character=draft.character??"cat";
   const MoonIcon=CHARACTER_THEMES[character].moon==="full"?Circle:Moon;
   const ready=[draft.mbti!==null,!!draft.speech,!!draft.intensity,!!draft.character][step];
@@ -40,24 +43,35 @@ export function Onboarding({onComplete,onLogout}:{
     finally {setBusy(false);}
   }
 
-  return <main className="personalization-screen" data-daljam-theme={character}>
+  return <main className="personalization-screen onboarding-screen" data-daljam-theme={character}>
     <section className="onboarding-card" aria-labelledby="onboarding-title">
-      <div className="onboarding-brand"><MoonIcon size={24} fill="currentColor" aria-hidden="true"/>달잠</div>
-      <p className="onboarding-progress-text" aria-live="polite">첫 설정 · {step+1} / {STEPS.length}</p>
-      <progress value={step+1} max={STEPS.length} aria-label="첫 설정 진행 단계"/>
-      <h1 id="onboarding-title" ref={heading} tabIndex={-1}>{STEPS[step]} 선택</h1>
-      <p className="onboarding-hint">{instructions[step]}</p>
-      <PreferenceField key={step} step={STEPS[step]} draft={draft} onChange={change=>setDraft(current=>({...current,...change}))}/>
-      {error&&<p className="preference-error" role="alert">{error}</p>}
-      <div className="preference-actions onboarding-actions">
-        {step>0&&<button type="button" className="button secondary" disabled={busy} onClick={()=>{setError("");setStep(step-1);}}>이전</button>}
-        {step===0&&<button type="button" className="button secondary" onClick={()=>{setDraft(current=>({...current,mbti:null}));setStep(1);}}>건너뛰기</button>}
-        <button type="button" className="button primary" disabled={!ready||busy}
-          onClick={()=>step===3?void finish():setStep(step+1)}>
-          {busy?"저장 중…":step===3?"설정 완료":"다음"}
-        </button>
+      <header className="onboarding-hero">
+        <div className="onboarding-brand"><MoonIcon size={22} fill="currentColor" aria-hidden="true"/>달잠</div>
+        <div className="onboarding-progress">
+          <p className="onboarding-progress-text" aria-live="polite">{step+1} / {STEPS.length}</p>
+          <div className="onboarding-dots" aria-hidden="true">
+            {STEPS.map((item,index)=><span key={item} data-progress={index===step?"current":index<step?"complete":"pending"}/>)}
+          </div>
+          <progress className="sr-only" value={step+1} max={STEPS.length} aria-label="첫 설정 진행 단계"/>
+        </div>
+      </header>
+      <div className="onboarding-content">
+        <h1 id="onboarding-title" ref={heading} tabIndex={-1}>{STEPS[step]} 선택</h1>
+        <p className="onboarding-hint">{instructions[step]}</p>
+        <PreferenceField key={step} step={STEPS[step]} draft={draft} onChange={change=>setDraft(current=>({...current,...change}))}/>
+        {error&&<p className="preference-error" role="alert">{error}</p>}
       </div>
-      <button type="button" className="text-button onboarding-logout" disabled={busy} onClick={onLogout}>로그아웃</button>
+      <footer className="onboarding-footer">
+        <div className="preference-actions onboarding-actions">
+          {step>0&&<button type="button" className="button secondary" disabled={busy} onClick={()=>{setError("");setStep(step-1);}}>이전</button>}
+          {step===0&&<button type="button" className="button secondary" onClick={()=>{setDraft(current=>({...current,mbti:null}));setStep(1);}}>건너뛰기</button>}
+          <button type="button" className="button primary" disabled={!ready||busy}
+            onClick={()=>step===3?void finish():setStep(step+1)}>
+            {busy?"저장 중…":step===3?"설정 완료":"다음"}
+          </button>
+        </div>
+        <button type="button" className="text-button onboarding-logout" disabled={busy} onClick={onLogout}>로그아웃</button>
+      </footer>
     </section>
   </main>;
 }
@@ -93,7 +107,11 @@ export function ProfilePreferences({profile,onSave}:{profile:Personalization;onS
     {STEPS.map((step,index)=><div key={step} className="preference-profile-item">
       <button type="button" disabled={saving} className="profile-setting preference-profile-row" aria-expanded={editing===step}
         onClick={()=>{setFeedback(null);setEditing(editing===step?null:step);setDraft(profile);}}>
-        <span>{step}</span><strong>{labels[index]}</strong>
+        <span>{step}</span>
+        <span className="profile-setting-value">
+          {step==="캐릭터"&&<span className="profile-theme-thumbnail" data-daljam-theme={profile.character} aria-hidden="true"/>}
+          <strong>{labels[index]}</strong><ChevronRight size={17} aria-hidden="true"/>
+        </span>
       </button>
       {editing===step&&<form className="preference-editor" onSubmit={event=>{event.preventDefault();void submit();}}>
         <fieldset disabled={saving}>
