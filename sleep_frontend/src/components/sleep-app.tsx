@@ -211,7 +211,17 @@ export default function SleepApp() {
   }
   async function perform(run:()=>Promise<void>,message?:string){if(demo){setNotice("체험 모드예요. 로그인하면 나의 기록을 저장하고 관리할 수 있어요.");return false;}setBusy(true);setError("");try{await run();if(message)setNotice(message);return true;}catch(e){if(e instanceof ApiError&&e.status===401)reset();setError(e instanceof Error?e.message:"다시 시도해 주세요.");return false;}finally{setBusy(false);}}
   function ask(title:string,description:string,run:()=>Promise<void>,permanent=false){if(demo){setNotice("체험 기록은 수정되지 않아요. 로그인 후 내 기록을 관리해 주세요.");return;}setPhrase("");setConfirmation({title,description,run,permanent});}
-  function chooseFile(f:File|undefined){if(!f)return;if(!/\.(md|json)$/i.test(f.name)){setError("수면 기록 .md 또는 .json 파일을 선택해 주세요.");return;}if(f.size>4*1024*1024){setError("파일은 4MiB 이하여야 합니다.");return;}setError("");setFile(f);}
+  function chooseFile(f:File|undefined){
+    if(!f||busy)return;
+    if(fileInput.current)fileInput.current.value="";
+    const supportedFormat=/\.(md|json)$/i.test(f.name);
+    if(!supportedFormat||f.size>4*1024*1024){
+      setFile(null);
+      setError(supportedFormat?"파일은 4MiB 이하여야 합니다.":"수면 기록 .md 또는 .json 파일을 선택해 주세요.");
+      return;
+    }
+    setError("");setFile(f);
+  }
   function openUpload(){if(demo){setNotice("체험 모드에서는 가상 기록을 보여 드려요. 로그인을 하면 내 파일을 분석할 수 있습니다.");return;}setFile(null);setError("");setUpload(true);}
   async function importFile(){if(!file)return;const form=new FormData();form.set("file",file);await perform(async()=>{const r=await api<{added_sessions:number;analysis_ids:string[]}>("analyze","POST",form);setUpload(false);setSelected(r.analysis_ids[0]||"");setRevision(n=>n+1);navigate(r.analysis_ids.length?"recordDetail":"records");setNotice(r.added_sessions?"수면 기록을 분석하고 저장했어요.":"이미 저장된 기록이에요. 기존 분석을 열었어요.");});}
   function exportRecord(){if(!record)return;const segments=record.segments.map(({start,end,stage})=>({start,end,stage}));const text=JSON.stringify({schema_version:1,timezone:record.timezone,source:record.source,sessions:[{start:record.start,end:record.end,segments,vitals_summary:record.vitals_summary}]},null,2);const url=URL.createObjectURL(new Blob([text],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download=`sleep-${record.start.slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

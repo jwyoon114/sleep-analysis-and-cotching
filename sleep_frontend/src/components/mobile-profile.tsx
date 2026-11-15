@@ -1,6 +1,6 @@
 import {Bell, ChevronRight, HeartPulse, Info, LogOut, Moon, Settings2, Trash2} from "lucide-react";
 import {CHARACTERS, MBTI_TYPES, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
-import type {ReactNode} from "react";
+import {useRef, type ReactNode} from "react";
 
 export default function MobileProfile({username, mbti, characterId, onMbti, onCharacter, onAccount, onPlan, onTrash, onUpload, onLogout, demo, busy, health}: {
   username:string; mbti:MbtiType|null; characterId:CharacterId;
@@ -8,6 +8,7 @@ export default function MobileProfile({username, mbti, characterId, onMbti, onCh
   onAccount:()=>void; onPlan:()=>void; onTrash:()=>void; onUpload:()=>void; onLogout:()=>void;
   demo:boolean; busy:boolean; health?:ReactNode;
 }) {
+  const galaxyHealth=useRef<HTMLDivElement>(null);
   return <div className="profile-menu">
     <section className="panel">
       <h2><Moon size={21}/>개인화 설정</h2>
@@ -27,10 +28,13 @@ export default function MobileProfile({username, mbti, characterId, onMbti, onCh
       <h2><HeartPulse size={21}/>건강 데이터 연결</h2>
       <div className="profile-health-actions">
         <button type="button" className="button secondary" onClick={onUpload}>iPhone · JSON 가져오기</button>
-        <a className="button secondary" href="#galaxy-health">Galaxy · Health Connect</a>
+        <button type="button" className="button secondary" onClick={()=>{
+          galaxyHealth.current?.focus({preventScroll:true});
+          galaxyHealth.current?.scrollIntoView({block:"start"});
+        }}>Galaxy · Health Connect</button>
       </div>
       <p className="muted">iPhone은 Apple 건강 기록을 지원하는 JSON 파일로 가져와요.</p>
-      <div id="galaxy-health">{health??<p className="muted">갤럭시 테스트 앱에 로그인하면 Health Connect를 연결할 수 있어요.</p>}</div>
+      <div ref={galaxyHealth} id="galaxy-health" role="region" aria-label="Galaxy 건강 데이터 연결" tabIndex={-1}>{health??<p className="muted">갤럭시 테스트 앱에 로그인하면 Health Connect를 연결할 수 있어요.</p>}</div>
     </section>
     <button type="button" className="profile-link panel" onClick={onTrash}><Trash2 size={21}/><span><strong>내 데이터 관리</strong><small>휴지통과 복원</small></span><ChevronRight size={19}/></button>
     <section className="panel profile-info"><h2><Info size={21}/>앱 정보 및 도움말</h2><a href="/privacy">개인정보 처리 안내</a><a href="/health-privacy">건강 데이터 사용 안내</a></section>

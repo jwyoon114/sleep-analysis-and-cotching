@@ -73,6 +73,7 @@
 .mobile-app .demo-banner button {color:#ffe0a6;}
 .mobile-app .toast {bottom:92px;max-width:calc(100vw - 24px);}
 .mobile-app .coach-text {color:#f0eeff;}
+.mobile-app .coaching-toolbar label,.mobile-app .history-selector,.mobile-app .saved-coaching .coach-timestamp {color:#cdd0ef;font-size:12px;}
 .mobile-app .coaching-data-guide,.mobile-app .coaching-history-state {background:#252b4c;color:#f0eeff;border-color:#48527b;}
 .mobile-app .footer {font-size:11px;flex-wrap:wrap;}
 .mobile-app .empty {min-height:150px;}
@@ -98,6 +99,7 @@
 .mobile-app .sleep-timeline-compact .timeline-tick,.mobile-app .sleep-timeline-compact .timeline-stage-label,.mobile-app .sleep-timeline-compact .timeline-endpoint {fill:#dadbf7;font-size:12px;}
 .mobile-app .hypnogram line[stroke="#ece7f2"],.mobile-app .hypnogram line[stroke="#f0ecf5"],.mobile-app .hypnogram line[stroke="#e9e2f0"] {stroke:#4a537c;}
 .mobile-app .timeline-selection {background:#22294a;border-color:#3d4774;color:#dedffd;}
+.mobile-app .timeline-selection strong,.mobile-app .timeline-selection span {color:#e8eaff;font-size:12px;}
 .mobile-app .sleep-timeline-compact .timeline-stage-badge,.mobile-app .sleep-timeline-compact .timeline-selection small,.mobile-app .sleep-timeline-compact .timeline-note {color:#c5cbf0;font-size:12px;}
 .mobile-app .sleep-timeline-compact {background:transparent;border:0;padding:0;}
 .mobile-app .timeline-controls input {width:100%;min-width:0;}
@@ -138,7 +140,7 @@
 .profile-info h2 {width:100%;margin-bottom:0;}
 .profile-info a {color:#d1d4ff;text-decoration:underline;}
 .profile-health .health-connect {margin:14px 0 0;}
-.profile-health #galaxy-health {scroll-margin-bottom:110px;}
+.profile-health #galaxy-health {scroll-margin-top:88px;scroll-margin-bottom:110px;}
 .plan-screen .alarm-panel {margin-bottom:0;}
 .plan-screen fieldset {border:0;padding:0;min-width:0;}
 .plan-status p {color:#cdd0ef;margin-top:7px;}
@@ -152,6 +154,9 @@ body:has(.mobile-app) > .app-install-actions {position:absolute;top:max(8px,env(
   .mobile-app .coach-layout {display:flex;flex-direction:column;}
   .main-tabs {position:fixed;top:auto;bottom:0;left:0;right:0;padding:5px max(8px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));border:1px solid #343c66;border-bottom:0;border-radius:21px 21px 0 0;}
   .mobile-content {padding-bottom:calc(76px + env(safe-area-inset-bottom));}
+  html:has(.mobile-app) {scroll-padding-bottom:calc(76px + env(safe-area-inset-bottom));}
+  .profile-health #galaxy-health {scroll-margin-top:12px;}
+  .mobile-app .toast {bottom:calc(76px + env(safe-area-inset-bottom));}
   body:has(.mobile-app) > .pwa-help-button {top:10px;padding:7px 9px;min-height:34px;}
 }
 @media (min-width:761px) {
