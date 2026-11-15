@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:coaching": "node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs",
     "test:demo": "node --test tests/demo-runtime.test.mjs",
-    "test:timeline": "node --experimental-strip-types --test tests/timeline.test.mjs"
+    "test:timeline": "node --experimental-strip-types --test tests/timeline.test.mjs tests/sleep-stage-breakdown.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.70.0",

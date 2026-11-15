@@ -2,7 +2,8 @@
 
 import {useCallback, useEffect, useMemo, useRef, useState, type FormEvent} from "react";
 import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, CloudUpload, Coffee, FileJson, FileText, Heart, LoaderCircle, Moon, Plus, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, X} from "lucide-react";
-import {api, ApiError, clock, colors, compare, daily, labels, minutes, shortDate, today, type Coaching, type Daily, type SleepRecord, type Stage, type Trash, type User} from "@/lib/sleep";
+import {api, ApiError, clock, colors, compare, daily, labels, minutes, shortDate, today, type Coaching, type Daily, type SleepRecord, type Trash, type User} from "@/lib/sleep";
+import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
 import {coachingDataNotes} from "@/lib/coaching-body";
 import RegistrationConsent from "./registration-consent";
@@ -47,21 +48,19 @@ function SleepChart({rows,large=false}:{rows:Daily[];large?:boolean}) {
   </div>;
 }
 
-function StageChart({record}:{record:SleepRecord}) {
-  const stages: Stage[] = ["deep","core","rem","wake","unspecified"];
-  const measured=stages.filter(s=>Number.isFinite(record.stage_minutes[s])&&record.stage_minutes[s]>0);
-  if(!measured.length)return <p className="muted">기록된 단계별 시간이 없어요.</p>;
-  const total=measured.reduce((sum,stage)=>sum+record.stage_minutes[stage],0);
+function StageChart({breakdown}:{breakdown:ReturnType<typeof sleepStageBreakdown>}) {
+  const {measuredMinutes,stages}=breakdown;
+  if(!stages.length)return <p className="muted">기록된 단계별 시간이 없어요.</p>;
   let offset=0;
-  const ring=measured.map(stage=>{
+  const ring=stages.map(({stage,percent})=>{
     const start=offset;
-    offset+=record.stage_minutes[stage]/total*100;
+    offset+=percent;
     return `${colors[stage]} ${start}% ${offset}%`;
   }).join(", ");
   return <><div className="stage-share">
-    <div className="stage-ring" aria-hidden="true" style={{background:`conic-gradient(${ring})`}}><span>{minutes(total)}</span></div>
-    <div className="stage-legend">{measured.map(s=><div key={s}><span><i style={{background:colors[s]}}/>{labels[s]}</span><strong>{minutes(record.stage_minutes[s])} <small>· {Math.round(record.stage_minutes[s]/total*100)}%</small></strong></div>)}</div>
-  </div><p className="disclaimer">비율은 기기가 기록한 단계 시간의 합계를 기준으로 계산해요.</p></>;
+    <div className="stage-ring" style={{background:`conic-gradient(${ring})`}}><div className="stage-ring-center"><strong>{minutes(measuredMinutes)}</strong><small>각성 포함</small></div></div>
+    <div className="stage-legend">{stages.map(({stage,minutes:duration,percent})=><div key={stage}><span><i style={{background:colors[stage]}}/>{labels[stage]}</span><strong>{minutes(duration)} <small>· {Math.round(percent)}%</small></strong></div>)}</div>
+  </div><p className="disclaimer">전체 기록 구간은 각성을 포함한 단계 시간의 합계예요. 단계별 비율도 이 합계를 기준으로 하며, 미기록 구간은 제외해요.</p></>;
 }
 
 function Auth({onLogin,onDemo,error:connectionError,status}:{onLogin:(u:User)=>void;onDemo:()=>void;error:string;status?:string}) {
@@ -147,6 +146,7 @@ export default function SleepApp() {
     return()=>{cancelAnimationFrame(frame);window.removeEventListener("keydown",close);document.body.style.overflow=overflow;previous?.focus();};
   },[upload,confirmation,busy]);
   const record=records.find(s=>s.analysis_id===selected);
+  const stageBreakdown=page==="recordDetail"&&record?sleepStageBreakdown(record):null;
   const dashboardHistory=latest && coachHistory?.recordId===latest.analysis_id ? coachHistory : null;
   const dashboardCoaching=dashboardHistory?.items[0];
   const rows=useMemo(()=>daily(records,end,days),[records,end,days]);
@@ -257,7 +257,7 @@ export default function SleepApp() {
     />}
 
     <div hidden={page!=="records"}><MobileRecordList records={records} loading={loading} onOpen={id=>{setSelected(id);navigate("recordDetail");}} onUpload={openUpload} onCompare={()=>navigate("comparison")}/></div>
-    {page==="recordDetail"&&<section className="panel record-detail">{record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>수면 시간</span><strong>{minutes(record.asleep_minutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3><StageChart record={record}/><details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions">{(record.coaching_count>0||demo)&&<button className="button secondary" onClick={()=>navigate("coaching")}><Sparkles size={16}/>이날의 코칭 보기</button>}<button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 AI 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
+    {page==="recordDetail"&&<section className="panel record-detail">{record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>실제 수면 시간</span><strong>{minutes(stageBreakdown?.sleepMinutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3>{stageBreakdown&&<StageChart breakdown={stageBreakdown}/>}<details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions">{(record.coaching_count>0||demo)&&<button className="button secondary" onClick={()=>navigate("coaching")}><Sparkles size={16}/>이날의 코칭 보기</button>}<button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 AI 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
 
     <div hidden={page!=="account"}>
       <MobileProfile username={user.username} mbti={mbti} characterId={characterId} onMbti={setMbti} onCharacter={setCharacterId} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced}/>}/>

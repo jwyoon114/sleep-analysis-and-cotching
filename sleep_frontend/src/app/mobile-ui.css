@@ -90,9 +90,10 @@
 .mobile-app .record-detail .detail-metrics span,.mobile-app .record-detail .detail-title {color:#e5e3ff;}
 .mobile-app .record-insights {margin-top:18px;padding:14px 0;line-height:1.6;}
 .mobile-app .stage-legend span,.mobile-app .stage-legend strong,.mobile-app .vitals-grid span {color:#e8e6ff;}
-.stage-share {display:grid;grid-template-columns:clamp(78px,24vw,130px) minmax(0,1fr);align-items:center;gap:12px;margin:12px 0;}
-.stage-ring {display:grid;place-items:center;aspect-ratio:1;border-radius:50%;padding:11px;}
-.stage-ring span {display:grid;place-items:center;width:100%;height:100%;padding:5px;border-radius:50%;background:#151b35;color:#f6f4ff;text-align:center;font-size:12px;font-weight:700;}
+.stage-share {display:grid;grid-template-columns:clamp(86px,25vw,130px) minmax(0,1fr);align-items:center;gap:12px;margin:12px 0;}
+.stage-ring {display:grid;place-items:center;aspect-ratio:1;border-radius:50%;padding:9px;}
+.stage-ring-center {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;height:100%;padding:3px;border-radius:50%;background:#151b35;color:#f6f4ff;text-align:center;font-size:12px;line-height:1.3;}
+.stage-ring-center small {color:#d0d2f2;font-size:10px;}
 .mobile-app .stage-share .stage-legend {display:grid;grid-template-columns:1fr;margin:0;gap:6px;}
 .mobile-app .stage-share .stage-legend > div {min-width:0;display:flex;flex-wrap:wrap;gap:3px 8px;justify-content:space-between;}
 .mobile-app .stage-share .stage-legend small {color:#c7c8f3;}
@@ -148,7 +149,13 @@
 .mobile-app .coaching-style-settings > summary {font-size:15px;color:#e2e1ff;}
 .mobile-app .coaching-style-settings > section {margin:12px 0 0;}
 body:has(.mobile-app) > .pwa-help-button {position:absolute;top:13px;right:max(8px,env(safe-area-inset-right));bottom:auto;}
-body:has(.mobile-app) > .app-install-actions {position:absolute;top:max(8px,env(safe-area-inset-top));bottom:auto;}
+body:has(> .mobile-app):has(> .app-install-actions) {
+  display:flex;flex-direction:column;background:#0c1025;
+}
+body:has(> .mobile-app) > .app-install-actions {
+  position:static;order:-1;align-self:flex-end;
+  margin:max(8px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left));
+}
 
 @media (max-width:760px) {
   .mobile-app .coach-layout {display:flex;flex-direction:column;}
