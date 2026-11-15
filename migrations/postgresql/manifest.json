@@ -13,6 +13,11 @@
       "version": 2,
       "file": "0002_account_consents.sql",
       "sha256": "40fa3b6f485add1084d4cabb36ab1c54630df51ac25e86156a87e7d51420c4c2"
+    },
+    {
+      "version": 3,
+      "file": "0003_account_personalization.sql",
+      "sha256": "7b5238d9d94245dfdd154b11e2ad1a296474ce2e6fafa58426385b14a7278ca5"
     }
   ]
 }

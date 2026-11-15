@@ -1,4 +1,4 @@
-import {CalendarDays, ChartNoAxesColumnIncreasing, House, Moon, UserRound} from "lucide-react";
+import {CalendarDays, ChartNoAxesColumnIncreasing, Circle, House, Moon, UserRound} from "lucide-react";
 import type {ReactNode} from "react";
 
 export type MainTab = "dashboard" | "records" | "plan" | "account";
@@ -17,9 +17,10 @@ export function MainNavigation({active, onNavigate}: {active:MainTab; onNavigate
   </nav>;
 }
 
-export function PageHero({title, description, illustrated, children}: {title:string; description?:string; illustrated?:boolean; children?:ReactNode}) {
+export function PageHero({title, description, illustrated, moon="crescent", children}: {title:string; description?:string; illustrated?:boolean; moon?:"crescent"|"full"; children?:ReactNode}) {
+  const MoonIcon=moon==="full"?Circle:Moon;
   return <header className={`mobile-hero${illustrated?" illustrated":""}`}>
-    {illustrated && <span className="hero-brand"><Moon size={23} fill="currentColor" aria-hidden="true"/> 달잠</span>}
+    {illustrated && <span className="hero-brand"><MoonIcon size={23} fill="currentColor" aria-hidden="true"/> 달잠</span>}
     <div className="hero-heading"><div><h1 tabIndex={-1}>{title}</h1>{description&&<p>{description}</p>}</div>{children}</div>
   </header>;
 }

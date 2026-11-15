@@ -1,10 +1,10 @@
 import {Bell, ChevronRight, HeartPulse, Info, LogOut, Moon, Settings2, Trash2} from "lucide-react";
-import {CHARACTERS, MBTI_TYPES, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
+
 import {useRef, type ReactNode} from "react";
 
-export default function MobileProfile({username, mbti, characterId, onMbti, onCharacter, onAccount, onPlan, onTrash, onUpload, onLogout, demo, busy, health}: {
-  username:string; mbti:MbtiType|null; characterId:CharacterId;
-  onMbti:(value:MbtiType|null)=>void; onCharacter:(value:CharacterId)=>void;
+export default function MobileProfile({username, preferences, onAccount, onPlan, onTrash, onUpload, onLogout, demo, busy, health}: {
+  username:string; preferences:ReactNode;
+
   onAccount:()=>void; onPlan:()=>void; onTrash:()=>void; onUpload:()=>void; onLogout:()=>void;
   demo:boolean; busy:boolean; health?:ReactNode;
 }) {
@@ -12,15 +12,7 @@ export default function MobileProfile({username, mbti, characterId, onMbti, onCh
   return <div className="profile-menu">
     <section className="panel">
       <h2><Moon size={21}/>개인화 설정</h2>
-      <p className="muted">MBTI와 캐릭터는 현재 이용 중에만 적용돼요.</p>
-      <label className="profile-setting">MBTI<select value={mbti??""} onChange={event=>onMbti((event.target.value||null) as MbtiType|null)}>
-        <option value="">선택 안 함</option>{MBTI_TYPES.map(value=><option key={value}>{value}</option>)}
-      </select></label>
-      <div className="profile-setting"><span>말투</span><small>준비 중</small></div>
-      <div className="profile-setting"><span>코칭 강도</span><small>준비 중</small></div>
-      <label className="profile-setting">캐릭터<select value={characterId} onChange={event=>onCharacter(event.target.value as CharacterId)}>
-        {CHARACTERS.map(value=><option key={value.id} value={value.id}>{value.name}</option>)}
-      </select></label>
+      {preferences}
     </section>
     <button type="button" className="profile-link panel" onClick={onAccount}><Settings2 size={21}/><span><strong>계정 정보 및 관리</strong><small>{username} 님</small></span><ChevronRight size={19}/></button>
     <button type="button" className="profile-link panel" onClick={onPlan}><Bell size={21}/><span><strong>취침 알림 설정</strong><small>취침·기상 목표 · 휴대폰 알림 준비 중</small></span><ChevronRight size={19}/></button>

@@ -74,6 +74,17 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                 self.assertEqual(client.post('/auth/login', json={'username': 'alice-test', 'password': 'wrong'}).status_code, 401)
                 self.assertEqual(client.get('/watch/sessions').status_code, 401)
 
+            with self.subTest('personalization persists for the authenticated account only'):
+                self.assertIsNone(client.get('/auth/personalization', headers=a).json()['personalization'])
+                preference = {'mbti': None, 'speech': 'casual', 'intensity': 'direct', 'allow_profanity': True, 'character': 'rabbit'}
+                saved_profile = client.post('/auth/personalization', headers=a, json=preference).json()['personalization']
+                self.assertEqual(saved_profile, {**preference, 'completed_at': saved_profile['completed_at']})
+                self.assertIsNone(client.get('/auth/personalization', headers=b).json()['personalization'])
+                changes = {**preference, 'allow_profanity': False, 'intensity': 'firm', 'character': 'raccoon'}
+                updated = client.patch('/auth/personalization', headers=a, json=changes).json()['personalization']
+                self.assertEqual(updated, {**changes, 'completed_at': saved_profile['completed_at']})
+                self.assertEqual(client.get('/auth/personalization', headers=a).json()['personalization'], updated)
+
             with self.subTest('concurrent imports are idempotent and stages survive reconnection'):
                 def upload(_):
                     return health_records.import_export(EXAMPLE_JSON, 'synthetic.json', alice)

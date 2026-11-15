@@ -2,11 +2,12 @@
 from typing import Literal
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
+from account_personalization import Preferences, get_personalization, save_personalization
 import coaching_service
 import history_service
 import backup_policy
@@ -147,6 +148,28 @@ def sign_in(request: Credentials):
 @app.get("/auth/me")
 def me(user=Depends(require_user)):
     return {"user": user}
+
+
+@app.get("/auth/personalization")
+def personalization(response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": get_personalization(user["id"])}
+
+
+@app.post("/auth/personalization")
+def complete_personalization(request: Preferences, response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": save_personalization(user["id"], request, complete=True)}
+
+
+@app.patch("/auth/personalization")
+def edit_personalization(request: Preferences, response: Response, user=Depends(require_user)):
+    profile = save_personalization(user["id"], request)
+    if profile is None:
+        raise HTTPException(409, "먼저 첫 설정을 완료해 주세요.")
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": profile}
+
 
 
 @app.patch("/auth/me")

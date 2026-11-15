@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 const COOKIE = "sleep_session";
 const LIMIT = 4 * 1024 * 1024 + 64 * 1024;
-const allowed = /^(?:health|alarms(?:\/test)?|auth\/(?:register|login|logout|me)|analyze|coach|watch\/(?:health\/connection|import|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
+const allowed = /^(?:health|alarms(?:\/test)?|auth\/(?:register|login|logout|me|personalization)|analyze|coach|watch\/(?:health\/connection|import|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
 
 async function handler(request: NextRequest, context: {params: Promise<{path: string[]}>}) {
   if (isDemoOnly()) return demoBlockedResponse();
