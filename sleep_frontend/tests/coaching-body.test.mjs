@@ -397,3 +397,14 @@ test("unsupported, incomplete, unknown, or inconsistent data falls back as a who
   changedBody.coaching += "\n서버가 새로 추가한 주의사항";
   assert.equal(render(changedBody, "ISTJ"), changedBody.coaching);
 });
+
+test("server-versioned coaching remains verbatim and keeps validated data notes", () => {
+  const {context}=fixtures.insufficient;
+  const text="기기가 수면으로 추정한 시간은 약 7시간이야.";
+  const versioned={...context, expression:{version:1, mbti:null, speech:"casual", intensity:"direct", allow_profanity:false}};
+  for (const type of MBTI_TYPES) {
+    assert.equal(renderCoachingBody(text,versioned,getCoachingTone(type)),text);
+  }
+  assert.ok(coachingDataNotes(text,versioned).some(note=>note.includes("3일 이상")));
+  assert.deepEqual(coachingDataNotes(text,{expression:versioned.expression}),[]);
+});

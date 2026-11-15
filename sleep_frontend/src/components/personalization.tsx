@@ -103,7 +103,7 @@ export function ProfilePreferences({profile,onSave}:{profile:Personalization;onS
   ];
 
   return <>
-    <p className="muted">선택한 설정이 이 계정에 저장돼요. 존댓말·반말, 강도와 비속어 설정은 코칭에 아직 반영되지 않아요.</p>
+    <p className="muted">말투와 강도는 다음 코칭부터 적용돼요. 이미 저장된 조언은 생성 당시 문장 그대로 표시돼요.</p>
     {STEPS.map((step,index)=><div key={step} className="preference-profile-item">
       <button type="button" disabled={saving} className="profile-setting preference-profile-row" aria-expanded={editing===step}
         onClick={()=>{setFeedback(null);setEditing(editing===step?null:step);setDraft(profile);}}>

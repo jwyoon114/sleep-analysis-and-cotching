@@ -271,13 +271,18 @@ function verifiedCoachingPresentation(savedBody: string, context: unknown): Pres
 }
 
 export function renderCoachingBody(savedBody: string, context: unknown, tone: CoachingTone | null): string {
-  if (tone === null) return savedBody;
+  if (tone === null || (isObject(context) && "expression" in context)) return savedBody;
   const data = verifiedCoachingPresentation(savedBody, context);
   return data ? styledBody(data, tone) : savedBody;
 }
 
 export function coachingDataNotes(savedBody: string, context: unknown): string[] {
-  const data = verifiedCoachingPresentation(savedBody, context);
+  // The backend owns the wording of versioned advice. Its measurements still
+  // use the same validated presentation contract as the original rule engine.
+  const data = isObject(context) && context.engine === "rules"
+    && isObject(context.expression) && context.expression.version === 1
+    && isPresentation(context.presentation)
+    ? context.presentation : verifiedCoachingPresentation(savedBody, context);
   if (data === null) return [];
 
   const notes: string[] = [];

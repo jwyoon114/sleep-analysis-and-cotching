@@ -122,6 +122,23 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                 self.assertEqual(stored['context'], context)
                 self.assertEqual(coaching_service.list_coaching(bob, sid), [])
 
+                # A second generation reads fresh settings; the first stays immutable.
+                self.assertEqual(context['expression']['speech'], 'casual')
+                self.assertEqual(context['expression']['intensity'], 'firm')
+                self.assertIsNone(context['expression']['mbti'])
+                client.patch('/auth/personalization', headers=a,
+                             json={**changes, 'speech': 'polite', 'intensity': 'direct', 'mbti': 'ENTJ'}).raise_for_status()
+                new = client.post('/coach', headers=a, json={'analysis_id': sid}).json()
+                self.assertEqual(new['context']['expression']['speech'], 'polite')
+                self.assertEqual(new['context']['expression']['mbti'], 'ENTJ')
+                self.assertNotEqual(new['coaching'], answer)
+                histories = client.get('/watch/sessions/' + sid + '/coaching', headers=a).json()['history']
+                self.assertEqual([item['coaching'] for item in histories], [new['coaching'], answer])
+                self.assertEqual(histories[1]['context'], context)
+                # This suite tests the dedicated trash flow with one active advice below.
+                self.assertTrue(coaching_service.delete_coaching(alice, sid, new['id']))
+
+
             with self.subTest('trash restore and approved permanent-deletion guard'):
                 self.assertEqual(client.delete('/watch/sessions/' + sid, headers=b).status_code, 404)
                 self.assertEqual(client.delete('/watch/sessions/' + sid, headers=a).status_code, 200)
@@ -173,11 +190,21 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                         # Test the SQL without enabling the guarded public API.
                         db.execute('INSERT INTO coaching VALUES(?,?,?,?,?,?)', ('synthetic-cross-reference', alice, health_sid, '보존할 원문', '{}', '2026-11-11'))
                         db.execute('INSERT INTO coaching_context VALUES(?,?)', ('synthetic-cross-reference', json.dumps({'record_ids': [sid, health_sid]})))
+                        db.execute('INSERT INTO coaching VALUES(?,?,?,?,?,?)', (
+                            'synthetic-versioned-reference', alice, health_sid, '버전 있는 원문', '{}', '2026-11-12'))
+                        saved_expression = {'expression': context['expression']}
+                        db.execute('INSERT INTO coaching_context VALUES(?,?)', ('synthetic-versioned-reference',
+                                   json.dumps({**saved_expression, 'record_ids': [sid, health_sid], 'input_summary': {}})))
                         self.assertFalse(health_records.erase_session_rows(db, sid, bob))
                         self.assertTrue(health_records.erase_session_rows(db, sid, alice))
                         self.assertEqual(db.execute('SELECT count(*) FROM samples WHERE subject=?', (alice,)).fetchone()[0], 0)
                         self.assertIsNone(db.execute('SELECT payload FROM coaching_context WHERE coaching_id=?', ('synthetic-cross-reference',)).fetchone())
                         self.assertEqual(db.execute('SELECT text FROM coaching WHERE id=?', ('synthetic-cross-reference',)).fetchone()[0], '보존할 원문')
+                        payload = db.execute('SELECT payload FROM coaching_context WHERE coaching_id=?',
+                                             ('synthetic-versioned-reference',)).fetchone()[0]
+                        self.assertEqual(json.loads(payload), saved_expression)
+                        self.assertEqual(db.execute('SELECT text FROM coaching WHERE id=?',
+                                                    ('synthetic-versioned-reference',)).fetchone()[0], '버전 있는 원문')
                         raise RollbackProbe()
                 with self.assertRaises(RollbackProbe):
                     with closing(health_records.connect()) as db, db:

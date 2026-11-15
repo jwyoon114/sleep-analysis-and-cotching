@@ -2,12 +2,10 @@
 
 import { useId, useState } from "react";
 import { ArrowDown, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
-import { renderCoachingBody } from "@/lib/coaching-body";
 import {
-  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter, getCoachingPreset, getCoachingTone,
+  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter,
   type CharacterId, type MbtiType,
 } from "@/lib/coaching-preview";
-import type { Coaching } from "@/lib/sleep";
 import styles from "./coaching-style-preview.module.css";
 
 type CoachingStyle = {
@@ -25,22 +23,11 @@ function CoachingCharacter({ characterId }: Pick<CoachingStyle, "characterId">) 
   );
 }
 
-export function CoachingAdvice({ body, context, mbti, characterId }: CoachingStyle & {
-  body: string;
-  context?: Coaching["context"];
-}) {
-  const preset = getCoachingPreset(mbti);
+export function CoachingAdvice({body, characterId}: Pick<CoachingStyle, "characterId"> & {body: string}) {
   return (
     <article aria-label="수면 조언">
-      <div className={styles.introduction}>
-        <CoachingCharacter characterId={characterId} />
-        <div>
-          <h3>{preset.label}</h3>
-          <p>{preset.opening}</p>
-        </div>
-      </div>
-      <p className="coach-text">{renderCoachingBody(body, context, getCoachingTone(mbti))}</p>
-      <p className={styles.closing}>{preset.closing}</p>
+      <CoachingCharacter characterId={characterId} />
+      <p className="coach-text">{body}</p>
     </article>
   );
 }
