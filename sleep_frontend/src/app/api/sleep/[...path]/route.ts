@@ -66,7 +66,7 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
     if (upstream.status === 401 && !publicEndpoint || endpoint === "auth/logout" && upstream.ok || endpoint === "auth/me" && ["PATCH", "DELETE"].includes(request.method) && upstream.ok) jar.delete(COOKIE);
     return NextResponse.json(result, {status: upstream.status, headers: {"Cache-Control": "no-store, private"}});
   } catch {
-    return fail(controller.signal.aborted ? "응답이 지연되고 있습니다. 기록이 저장됐는지 확인한 뒤 다시 시도해 주세요." : "수면 분석 서버에 연결하지 못했습니다. 실행 도구로 서버를 켠 뒤 다시 시도해 주세요.", 502);
+    return fail(controller.signal.aborted ? "응답이 지연되고 있습니다. 기록이 저장됐는지 확인한 뒤 다시 시도해 주세요." : "수면 분석 서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.", 502);
   } finally { clearTimeout(timer); }
 }
 
