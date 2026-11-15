@@ -29,6 +29,7 @@ export default function SleepAlarms({settings,coaching,onSave,onBack}:{
 
   return <section className="panel alarm-panel">
     <div className="panel-heading"><div><h2><Bell size={19}/> 수면 스케줄 설정</h2><p>목표 취침 시간과 기상 시간을 설정하세요.</p></div></div>
+    {!draft.desktop_available&&<p className="muted">휴대폰 알람과 푸시 알림은 아직 지원되지 않아요. 취침·기상 목표는 저장할 수 있어요.</p>}
     {proposal?.bedtime&&proposal.wake_time&&coaching&&<div className="soft-info"><div>
       <strong>이 코칭에 저장된 제안</strong><p>{proposal.bedtime} – {proposal.wake_time} · {proposal.timezone}</p><p>{proposal.reason}</p>
       <button type="button" className="button secondary compact" disabled={busy} onClick={()=>{

@@ -167,6 +167,35 @@ class MigrationPostgresTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT count(*) AS n FROM morning_plans").fetchone()["n"], 0)
 
 
+    def test_release_upgrade_from_production_preserves_account_records_and_coaching(self):
+        previous_directory = copy_migrations(self)
+        previous = manifest_at(previous_directory)
+        previous["migrations"] = previous["migrations"][:2]
+        write_manifest(previous_directory, previous)
+        self.assertEqual(runner.apply_migrations(previous_directory), (1, 2))
+        fixtures = {
+            "accounts": ("retained-account", "fixture-account", "fixture", "fixture", "2026-11-10"),
+            "sessions": ("retained-session", "retained-account", "2026-11-10", "2026-11-11", '{"asleep_minutes":380}'),
+            "coaching": ("retained-coaching", "retained-account", "retained-session", "보존할 기존 조언", "{}", "2026-11-11"),
+            "coaching_context": ("retained-coaching", '{"engine":"rules","record_ids":["retained-session"]}'),
+            "account_consents": ("retained-account", "fixture", "2026-11-10", "2026-11-10", "2026-11-10", "2026-11-10"),
+        }
+        with self.cluster.connect(self.database) as connection:
+            for table, values in fixtures.items():
+                connection.execute(f"INSERT INTO {table} VALUES ({','.join(['%s'] * len(values))})", values)
+        self.assertEqual(runner.apply_migrations(), (3, 4))
+        self.assertEqual(runner.apply_migrations(), ())
+        with self.cluster.connect(self.database) as connection:
+            for table, values in fixtures.items():
+                row, = connection.execute(f"SELECT * FROM {table}").fetchall()
+                self.assertEqual(tuple(row.values()), values)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM account_personalization").fetchone()["n"], 0)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM morning_plans").fetchone()["n"], 0)
+            # The previously deployed manifest cannot start against an advanced database.
+            with self.assertRaises(runner.MigrationHistoryError):
+                runner.inspect_history(connection, runner.load_migrations(previous_directory))
+
+
     def test_saved_checksum_detects_changed_sql_even_with_updated_manifest(self):
         runner.apply_migrations()
         directory = copy_migrations(self)

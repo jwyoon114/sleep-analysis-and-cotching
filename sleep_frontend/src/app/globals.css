@@ -27,3 +27,39 @@
 .pwa-help-button{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));z-index:30;display:flex;align-items:center;gap:7px;border:1px solid #ded5ed;border-radius:24px;background:#fff;color:#695298;box-shadow:0 4px 20px #3b234c15;padding:12px 16px;font-size:12px}.pwa-dialog{border:0;border-radius:22px;padding:30px;width:min(92vw,480px);max-height:85dvh;overflow:auto;box-shadow:0 20px 80px #35254c40;color:var(--ink)}.pwa-dialog::backdrop{background:#21192a70}.pwa-dialog h2{font-size:22px;margin:14px 22px 12px 0}.pwa-dialog h3{margin:22px 0 7px}.pwa-dialog p{font-size:13px;color:#797181;margin-bottom:14px}.pwa-close{position:absolute;top:15px;right:15px}.pwa-dialog .button{margin:8px 0}@media(max-width:700px){input,select,textarea{font-size:16px}.app-shell{padding-bottom:70px}body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}}
 
 .health-connect{margin-bottom:24px;padding:24px}.health-connect h2{margin:0 0 12px}.health-connect p{line-height:1.7;margin:10px 0}.health-connect label{display:block;margin:14px 0}.health-connect select{display:block;width:100%;max-width:420px;padding:10px;margin-top:8px}.health-actions{display:flex;flex-wrap:wrap;gap:12px}.health-connect a{display:inline-block;margin-top:16px;color:#695298}
+
+.app-install-actions {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px;
+  max-width: calc(100vw - 28px);
+  padding: 4px;
+  border: 1px solid #ded5ed;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 20px #3b234c15;
+}
+.app-install-actions .button, .pwa-dialog .app-download-button {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-decoration: none;
+}
+.app-install-actions small { grid-column: 1 / -1; padding: 0 5px 2px; color: #5d526c; font-size: 11px; }
+.app-install-actions .button:focus-visible, .pwa-dialog .app-download-button:focus-visible {
+  outline: 2px solid #5a4682;
+  outline-offset: 2px;
+}
+.pwa-dialog { color: #383044; }
+.pwa-dialog p { color: #5d526c; }
+.pwa-dialog section + section { margin-top: 22px; }
+
+@media (max-width: 520px) {
+  body:has(.app-install-actions) .auth-form-side { padding-bottom: 126px; }
+  body:has(.app-install-actions) .auth-bottom { bottom: 90px; }
+  .pwa-dialog { padding: 22px; }
+}

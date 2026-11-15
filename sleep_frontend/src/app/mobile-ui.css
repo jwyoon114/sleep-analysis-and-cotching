@@ -105,7 +105,7 @@
 .mobile-app .sleep-timeline-compact {background:transparent;border:0;padding:0;}
 .mobile-app .timeline-controls input {width:100%;min-width:0;}
 .mobile-app .dashboard-card-title h2 {color:#f5f4ff;}
-.mobile-app .dashboard-card-title p,.mobile-app .dashboard-duration,.mobile-app .dashboard-state,.mobile-app .dashboard-coaching-excerpt,.mobile-app .dashboard-empty p {color:#e1e3ff;}
+.mobile-app .dashboard-card-title p,.mobile-app .dashboard-duration,.mobile-app .dashboard-state,.mobile-app .dashboard-coaching-excerpt,.mobile-app .dashboard-empty p,.mobile-app .dashboard-empty p:first-child {color:#e1e3ff;}
 .mobile-app .dashboard-duration strong {color:#ffe0a6;}
 .mobile-app .dashboard-card-icon {background:#2b335b;color:#ffd28c;}
 .mobile-app .dashboard-link {color:#cbd3ff;}
