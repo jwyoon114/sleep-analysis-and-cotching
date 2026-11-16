@@ -3,41 +3,22 @@
 import { useId, useState } from "react";
 import { ArrowDown, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import {
-  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter,
-  type CharacterId, type MbtiType,
+  COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, type MbtiType,
 } from "@/lib/coaching-preview";
 import styles from "./coaching-style-preview.module.css";
 
-type CoachingStyle = {
-  mbti: MbtiType | null;
-  characterId: CharacterId;
-};
-
-function CoachingCharacter({ characterId }: Pick<CoachingStyle, "characterId">) {
-  const character = getCharacter(characterId);
-  return (
-    <figure className={styles.character} data-character={characterId}>
-      <span role="img" aria-label={"선택한 캐릭터: " + character.name}>{character.emoji}</span>
-      <figcaption>{character.name}</figcaption>
-    </figure>
-  );
-}
-
-export function CoachingAdvice({body, characterId}: Pick<CoachingStyle, "characterId"> & {body: string}) {
+export function CoachingAdvice({body}: {body: string}) {
   return (
     <article aria-label="수면 조언">
-      <CoachingCharacter characterId={characterId} />
       <p className="coach-text">{body}</p>
     </article>
   );
 }
 
-export default function CoachingStylePreview({ mbti: initialMbti, characterId: initialCharacter }: CoachingStyle) {
+export default function CoachingStylePreview({mbti: initialMbti}: {mbti: MbtiType | null}) {
   const id = useId();
   const [mbti, onMbtiChange] = useState(initialMbti);
-  const [characterId, onCharacterChange] = useState(initialCharacter);
   const preview = createCoachingPreview(mbti);
-  const character = getCharacter(characterId);
   const RecommendationList = preview.expression.listStyle === "steps" ? "ol" : "ul";
 
   return (
@@ -46,7 +27,7 @@ export default function CoachingStylePreview({ mbti: initialMbti, characterId: i
         <div>
           <span className={styles.eyebrow}><Sparkles size={14} aria-hidden="true" /> 나의 코칭 스타일</span>
           <h2 id={id + "-title"}>나에게 편한 말투를 찾아봐요</h2>
-          <p>같은 가상 기록, 다른 표현. 함께할 동물도 따로 골라보세요.</p>
+          <p>같은 가상 기록을 MBTI별 표현으로 비교해 보세요.</p>
         </div>
         <span className={styles.temporary}>미리보기 전용</span>
       </div>
@@ -82,27 +63,6 @@ export default function CoachingStylePreview({ mbti: initialMbti, characterId: i
             </p>
           </fieldset>
 
-          <fieldset className={styles.fieldset}>
-            <legend><span className={styles.step}>02</span> 함께할 동물 선택</legend>
-            <p className={styles.hint}>캐릭터는 말투와 조언 내용에 영향을 주지 않아요.</p>
-            <div className={styles.animalGrid}>
-              {CHARACTERS.map(item => (
-                <label key={item.id} className={styles.animalOption}>
-                  <input
-                    className={styles.radio}
-                    type="radio"
-                    name={id + "-character"}
-                    value={item.id}
-                    checked={characterId === item.id}
-                    onChange={() => onCharacterChange(item.id)}
-                    aria-label={item.name}
-                  />
-                  <span><span aria-hidden="true">{item.emoji}</span>{item.name}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
           <p className={styles.sessionNote}>
             이곳의 선택은 계정 설정에 저장되지 않아요.
             계정 설정은 마이페이지에서 변경할 수 있어요.
@@ -118,7 +78,6 @@ export default function CoachingStylePreview({ mbti: initialMbti, characterId: i
             <span className={styles.mbtiBadge}>{mbti || "기본 말투"}</span>
           </header>
           <div className={styles.introduction}>
-            <CoachingCharacter characterId={characterId} />
             <div>
               <h3 id={id + "-preview-title"}>{preview.preset.label}</h3>
               <p data-testid="preview-opening">{preview.preset.opening}</p>
@@ -157,7 +116,7 @@ export default function CoachingStylePreview({ mbti: initialMbti, characterId: i
       </div>
 
       <p role="status" className="sr-only">
-        {mbti || "기본"} 말투와 {character.name} 캐릭터로 가상 조언을 미리 보고 있습니다.
+        {mbti || "기본"} 말투로 가상 조언을 미리 보고 있습니다.
       </p>
     </section>
   );

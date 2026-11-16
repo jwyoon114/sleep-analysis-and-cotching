@@ -1,15 +1,14 @@
 "use client";
 
-import {useEffect, useRef, useState} from "react";
-import {Download, Smartphone, X} from "lucide-react";
+import {useEffect, useState} from "react";
+import {Download, Smartphone} from "lucide-react";
+import ClassicDialog from "./classic-dialog";
 
 const APK_URL = "/downloads/daljam-android.apk";
 
 export default function PwaInstall() {
   const [native, setNative] = useState(false);
   const [open, setOpen] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const detectNative = () => setNative(Boolean(window.DaljamNative));
@@ -21,10 +20,6 @@ export default function PwaInstall() {
     return () => window.removeEventListener("daljam-native-ready", detectNative);
   }, []);
 
-  useEffect(() => {
-    if (open) dialog.current?.showModal();
-    else dialog.current?.close();
-  }, [open]);
 
   if (native) return null;
 
@@ -33,19 +28,12 @@ export default function PwaInstall() {
       <a className="button primary app-download-button" href={APK_URL} download="daljam-android.apk" aria-describedby="apk-requirements">
         <Download size={16} aria-hidden="true"/> 갤럭시 앱 다운로드
       </a>
-      <button type="button" ref={trigger} className="button secondary app-install-guide" onClick={() => setOpen(true)}>
+      <button type="button" className="button secondary app-install-guide" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         <Smartphone size={16} aria-hidden="true"/> 설치 안내
       </button>
       <small id="apk-requirements">테스트 버전 · Android 9 이상</small>
     </div>
-    <dialog ref={dialog} className="pwa-dialog" aria-labelledby="app-install-title" onClose={() => {
-      setOpen(false);
-      trigger.current?.focus();
-    }}>
-      <button type="button" className="icon-button pwa-close" aria-label="설치 안내 닫기" onClick={() => setOpen(false)}>
-        <X aria-hidden="true"/>
-      </button>
-      <h2 id="app-install-title">휴대폰에 달잠 설치하기</h2>
+    {open&&<ClassicDialog className="pwa-dialog" title="휴대폰에 달잠 설치하기" closeLabel="설치 안내 닫기" onDismiss={()=>setOpen(false)}>
       <section aria-labelledby="galaxy-install-title">
         <h3 id="galaxy-install-title">갤럭시 · Android 앱</h3>
         <p><strong>테스트 버전 · Android 9 이상</strong></p>
@@ -62,6 +50,6 @@ export default function PwaInstall() {
       </section>
       <p>웹앱과 수면 동기화에는 인터넷 연결이 필요해요. 휴대폰 푸시 알림은 현재 지원하지 않아요.</p>
       <button type="button" className="button secondary full" onClick={() => setOpen(false)}>확인했어요</button>
-    </dialog>
+    </ClassicDialog>}
   </>;
 }

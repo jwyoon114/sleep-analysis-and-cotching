@@ -1,11 +1,11 @@
 "use client";
 
 import {useId, useLayoutEffect, useRef, useState, type KeyboardEvent} from "react";
-import {Circle, Heart, MessageCircle, MessagesSquare, Moon, Shield, Zap, type LucideIcon} from "lucide-react";
-import {CHARACTERS, MBTI_TYPES, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
-import {CHARACTER_THEMES, changeIntensity, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft} from "@/lib/personalization";
+import {Heart, MessageCircle, MessagesSquare, Shield, Zap, type LucideIcon} from "lucide-react";
+import {MBTI_TYPES, type MbtiType} from "@/lib/coaching-preview";
+import {changeIntensity, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft} from "@/lib/personalization";
 
-export const STEPS = ["MBTI", "말투", "코칭 강도", "캐릭터"] as const;
+export const STEPS = ["MBTI", "말투", "코칭 강도"] as const;
 export type Step = typeof STEPS[number];
 
 export function MbtiWheel({value,onChange}:{value:MbtiType|null;onChange:(value:MbtiType|null)=>void}) {
@@ -116,26 +116,10 @@ const intensityIcons = {gentle:Heart, firm:Shield, direct:Zap};
 const speechChoices = SPEECH_OPTIONS.map(option=>({...option,Icon:speechIcons[option.value]}));
 const intensityChoices = INTENSITY_OPTIONS.map(option=>({...option,Icon:intensityIcons[option.value]}));
 
-function CharacterChoices({value,onChange}:{value:CharacterId|undefined;onChange:(value:CharacterId)=>void}) {
-  const name=useId();
-  return <fieldset className="preference-choices character-choices">
-    <legend className="sr-only">캐릭터</legend>
-    {CHARACTERS.map(character=><label key={character.id} className="preference-choice character-choice" data-daljam-theme={character.id}>
-      <span className="character-choice-artwork" aria-hidden="true"/>
-      <input type="radio" name={name} value={character.id} checked={value===character.id} onChange={()=>onChange(character.id)}/>
-      <span className="character-choice-name">
-        {CHARACTER_THEMES[character.id].moon==="full"?<Circle size={13} fill="currentColor" aria-hidden="true"/>:<Moon size={13} fill="currentColor" aria-hidden="true"/>}
-        <span>{character.name}</span>
-      </span>
-    </label>)}
-  </fieldset>;
-}
-
 export function PreferenceField({step,draft,onChange}:{step:Step;draft:Draft;onChange:(change:Partial<Draft>)=>void}) {
   switch(step){
     case "MBTI": return <MbtiWheel value={draft.mbti} onChange={mbti=>onChange({mbti})}/>;
     case "말투": return <Choices label={step} options={speechChoices} value={draft.speech} onChange={speech=>onChange({speech})}/>;
     case "코칭 강도": return <IntensityField draft={draft} onChange={onChange}/>;
-    case "캐릭터": return <CharacterChoices value={draft.character} onChange={character=>onChange({character})}/>;
   }
 }

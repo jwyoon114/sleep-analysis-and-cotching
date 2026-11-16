@@ -4,6 +4,7 @@ import "./globals.css";
 import "./mobile-ui.css";
 import "./personalization.css";
 import "./sleep-plan.css";
+import "./classic-dialog.css";
 
 export const metadata: Metadata = {
   title: "달잠 · 나의 수면 리포트",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
   appleWebApp: {capable:true,title:"달잠",statusBarStyle:"default"},
   icons: {apple:"/icons/apple-touch-icon.png",icon:"/icons/app-192.png"},
 };
-export const viewport:Viewport={width:"device-width",initialScale:1,viewportFit:"cover",themeColor:"#7861ac"};
+export const viewport:Viewport={width:"device-width",initialScale:1,viewportFit:"cover",themeColor:"#f3f2f7"};
 
 export default function RootLayout({ children }: Readonly<{children: React.ReactNode}>) {
   return <html lang="ko"><body>{children}<PwaInstall/></body></html>;

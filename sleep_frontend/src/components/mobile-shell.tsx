@@ -1,4 +1,4 @@
-import {CalendarDays, ChartNoAxesColumnIncreasing, Circle, House, Moon, UserRound} from "lucide-react";
+import {CalendarDays, ChartNoAxesColumnIncreasing, House, Moon, UserRound} from "lucide-react";
 import type {ReactNode} from "react";
 
 export type MainTab = "dashboard" | "records" | "plan" | "account";
@@ -11,16 +11,16 @@ const tabs = [
 
 export function MainNavigation({active, onNavigate}: {active:MainTab; onNavigate:(tab:MainTab)=>void}) {
   return <nav className="main-tabs" aria-label="주요 메뉴">
+    <div className="classic-sidebar-brand"><span className="classic-brand-symbol"><Moon size={22} aria-hidden="true"/></span>달잠</div>
     {tabs.map(({id, label, Icon}) => <button key={id} type="button" aria-current={active===id?"page":undefined} onClick={()=>onNavigate(id)}>
       <Icon size={23} aria-hidden="true"/><span>{label}</span>
     </button>)}
   </nav>;
 }
 
-export function PageHero({title, description, illustrated, moon="crescent", children}: {title:string; description?:string; illustrated?:boolean; moon?:"crescent"|"full"; children?:ReactNode}) {
-  const MoonIcon=moon==="full"?Circle:Moon;
-  return <header className={`mobile-hero${illustrated?" illustrated":""}`}>
-    {illustrated && <span className="hero-brand"><MoonIcon size={23} fill="currentColor" aria-hidden="true"/> 달잠</span>}
+export function PageHero({title, description, children}: {title:string; description?:string; children?:ReactNode}) {
+  return <header className="mobile-hero">
+    <span className="hero-brand"><span className="classic-brand-symbol"><Moon size={20} aria-hidden="true"/></span>달잠</span>
     <div className="hero-heading"><div><h1 tabIndex={-1}>{title}</h1>{description&&<p>{description}</p>}</div>{children}</div>
   </header>;
 }

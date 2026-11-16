@@ -1,16 +1,15 @@
 "use client";
 
 import {useEffect,useRef,useState} from "react";
-import {ChevronRight, Circle, Moon} from "lucide-react";
-import {CHARACTERS} from "@/lib/coaching-preview";
-import {CHARACTER_THEMES, INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft, type Personalization, type Preferences} from "@/lib/personalization";
+import {ChevronRight, Moon} from "lucide-react";
+import {INTENSITY_OPTIONS, SPEECH_OPTIONS, type Draft, type Personalization, type Preferences} from "@/lib/personalization";
+import ClassicDialog from "./classic-dialog";
 import {PreferenceField, STEPS, type Step} from "./personalization-fields";
 
 const instructions = [
   "MBTI별 표현을 고르거나 이 단계를 건너뛸 수 있어요.",
   "저장할 말투를 선택해 주세요.",
   "편안하게 받아들일 수 있는 조언 표현을 골라주세요.",
-  "캐릭터는 테마만 바꿔요. 코칭의 말투와 강도는 따로 선택해요.",
 ];
 
 function completeDraft(draft:Draft):Preferences|null {
@@ -22,7 +21,7 @@ export function Onboarding({onComplete,onLogout}:{
   onComplete:(preferences:Preferences)=>Promise<void>;onLogout:()=>void;
 }) {
   const [step,setStep]=useState(0);
-  const [draft,setDraft]=useState<Draft>({mbti:null,allow_profanity:false});
+  const [draft,setDraft]=useState<Draft>({mbti:null,allow_profanity:false,character:"cat"});
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const heading=useRef<HTMLHeadingElement>(null);
@@ -30,9 +29,8 @@ export function Onboarding({onComplete,onLogout}:{
     heading.current?.focus({preventScroll:true});
     window.scrollTo(0,0);
   },[step]);
-  const character=draft.character??"cat";
-  const MoonIcon=CHARACTER_THEMES[character].moon==="full"?Circle:Moon;
-  const ready=[draft.mbti!==null,!!draft.speech,!!draft.intensity,!!draft.character][step];
+  const ready=[draft.mbti!==null,!!draft.speech,!!draft.intensity][step];
+  const last=step===STEPS.length-1;
 
   async function finish() {
     const values=completeDraft(draft);
@@ -43,10 +41,10 @@ export function Onboarding({onComplete,onLogout}:{
     finally {setBusy(false);}
   }
 
-  return <main className="personalization-screen onboarding-screen" data-daljam-theme={character}>
+  return <main className="personalization-screen onboarding-screen">
     <section className="onboarding-card" aria-labelledby="onboarding-title">
       <header className="onboarding-hero">
-        <div className="onboarding-brand"><MoonIcon size={22} fill="currentColor" aria-hidden="true"/>달잠</div>
+        <div className="onboarding-brand"><span className="classic-brand-symbol"><Moon size={23} aria-hidden="true"/></span>달잠</div>
         <div className="onboarding-progress">
           <p className="onboarding-progress-text" aria-live="polite">{step+1} / {STEPS.length}</p>
           <div className="onboarding-dots" aria-hidden="true">
@@ -66,8 +64,8 @@ export function Onboarding({onComplete,onLogout}:{
           {step>0&&<button type="button" className="button secondary" disabled={busy} onClick={()=>{setError("");setStep(step-1);}}>이전</button>}
           {step===0&&<button type="button" className="button secondary" onClick={()=>{setDraft(current=>({...current,mbti:null}));setStep(1);}}>건너뛰기</button>}
           <button type="button" className="button primary" disabled={!ready||busy}
-            onClick={()=>step===3?void finish():setStep(step+1)}>
-            {busy?"저장 중…":step===3?"설정 완료":"다음"}
+            onClick={()=>last?void finish():setStep(step+1)}>
+            {busy?"저장 중…":last?"설정 완료":"다음"}
           </button>
         </div>
         <button type="button" className="text-button onboarding-logout" disabled={busy} onClick={onLogout}>로그아웃</button>
@@ -80,18 +78,19 @@ export function ProfilePreferences({profile,onSave}:{profile:Personalization;onS
   const [editing,setEditing]=useState<Step|null>(null);
   const [draft,setDraft]=useState<Draft>(profile);
   const [saving,setSaving]=useState(false);
-  const [feedback,setFeedback]=useState<{error:boolean;text:string}|null>(null);
+  const [feedback,setFeedback]=useState("");
+  const [saveError,setSaveError]=useState("");
 
   async function submit() {
     const values=completeDraft(draft);
     if(saving||!values)return;
-    setSaving(true);setFeedback(null);
+    setSaving(true);setFeedback("");setSaveError("");
     try {
       await onSave(values);
-      setFeedback({error:false,text:"개인화 설정을 저장했어요."});
+      setFeedback("개인화 설정을 저장했어요.");
       setEditing(null);
     } catch {
-      setFeedback({error:true,text:"개인화 설정을 저장하지 못했어요. 다시 시도해 주세요."});
+      setSaveError("개인화 설정을 저장하지 못했어요. 다시 시도해 주세요.");
     } finally {setSaving(false);}
   }
 
@@ -99,31 +98,32 @@ export function ProfilePreferences({profile,onSave}:{profile:Personalization;onS
     profile.mbti??"선택 안 함",
     SPEECH_OPTIONS.find(option=>option.value===profile.speech)?.label,
     INTENSITY_OPTIONS.find(option=>option.value===profile.intensity)?.label,
-    CHARACTERS.find(option=>option.id===profile.character)?.name,
   ];
 
   return <>
     <p className="muted">말투와 강도는 다음 코칭부터 적용돼요. 이미 저장된 조언은 생성 당시 문장 그대로 표시돼요.</p>
     {STEPS.map((step,index)=><div key={step} className="preference-profile-item">
-      <button type="button" disabled={saving} className="profile-setting preference-profile-row" aria-expanded={editing===step}
-        onClick={()=>{setFeedback(null);setEditing(editing===step?null:step);setDraft(profile);}}>
+      <button type="button" className="profile-setting preference-profile-row" aria-haspopup="dialog"
+        onClick={()=>{setFeedback("");setSaveError("");setEditing(step);setDraft(profile);}}>
         <span>{step}</span>
         <span className="profile-setting-value">
-          {step==="캐릭터"&&<span className="profile-theme-thumbnail" data-daljam-theme={profile.character} aria-hidden="true"/>}
           <strong>{labels[index]}</strong><ChevronRight size={17} aria-hidden="true"/>
         </span>
       </button>
-      {editing===step&&<form className="preference-editor" onSubmit={event=>{event.preventDefault();void submit();}}>
+    </div>)}
+    {editing&&<ClassicDialog title={editing+" 변경"} description="변경한 설정은 다음 코칭부터 적용돼요." busy={saving} onDismiss={()=>setEditing(null)}>
+      <form className="preference-editor" onSubmit={event=>{event.preventDefault();void submit();}}>
         <fieldset disabled={saving}>
-          <legend className="sr-only">{step} 변경</legend>
-          <PreferenceField step={step} draft={draft} onChange={change=>setDraft(current=>({...current,...change}))}/>
+          <legend className="sr-only">{editing} 선택</legend>
+          <PreferenceField step={editing} draft={draft} onChange={change=>setDraft(current=>({...current,...change}))}/>
+          {saveError&&<p className="preference-error" role="alert">{saveError}</p>}
           <div className="preference-actions">
-            <button type="button" className="button secondary" onClick={()=>{setEditing(null);setFeedback(null);}}>취소</button>
+            <button type="button" className="button secondary" onClick={()=>setEditing(null)}>취소</button>
             <button type="submit" className="button primary">{saving?"저장 중…":"저장"}</button>
           </div>
         </fieldset>
-      </form>}
-    </div>)}
-    {feedback&&<p className={feedback.error?"preference-error":"preference-success"} role={feedback.error?"alert":"status"}>{feedback.text}</p>}
+      </form>
+    </ClassicDialog>}
+    {feedback&&<p className="preference-success" role="status">{feedback}</p>}
   </>;
 }

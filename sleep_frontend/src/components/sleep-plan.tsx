@@ -4,6 +4,7 @@ import {useEffect,useRef,useState} from "react";
 import {ArrowDown,ArrowUp,Bell,CalendarDays,Moon,Plus,Sparkles,Sun,Trash2,X} from "lucide-react";
 import {api,minutes,type Coaching} from "@/lib/sleep";
 import SleepAlarms,{saveSleepSchedule,type Schedule} from "./sleep-alarms";
+import ClassicDialog from "./classic-dialog";
 
 type Activity={id:string;title:string;completed:boolean};
 type Plan={date:string;timezone:string;activities:Activity[]};
@@ -25,21 +26,16 @@ function PlanChecklist({plan,busy,onMark}:{plan:Plan;busy:boolean;onMark:(id:str
 }
 
 function MorningSheet({plan,onClose,onMark}:{plan:Plan;onClose:()=>void;onMark:(plan:Plan,id:string,completed:boolean)=>Promise<void>}) {
-  const ref=useRef<HTMLDialogElement>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
-  useEffect(()=>{if(ref.current&&!ref.current.open)ref.current.showModal();},[]);
-  return <dialog className="morning-sheet" aria-labelledby="morning-sheet-title" ref={ref} onClose={onClose}>
-    <div className="panel-heading"><div><h2 id="morning-sheet-title"><Sun size={19}/> 오늘 아침 계획</h2>
-      <p>{dateLabel(plan.date)} · {plan.timezone}</p></div>
-      <button type="button" className="icon-button" aria-label="아침 계획 닫기" autoFocus onClick={()=>ref.current?.close()}><X size={21}/></button>
-    </div>
+  return <ClassicDialog className="morning-sheet" title="오늘 아침 계획" description={dateLabel(plan.date)+" · "+plan.timezone}
+    onDismiss={onClose} busy={busy} closeLabel="아침 계획 닫기">
     <PlanChecklist plan={plan} busy={busy} onMark={async(id,done)=>{
       setBusy(true);setError("");
       try{await onMark(plan,id,done);}catch(e){setError(errorText(e));}finally{setBusy(false);}
     }}/>
     {error&&<p role="alert" className="plan-error">{error}</p>}
-    <button type="button" className="button secondary full" onClick={()=>ref.current?.close()}>닫기</button>
-  </dialog>;
+    <button type="button" className="button secondary full" disabled={busy} onClick={onClose}>닫기</button>
+  </ClassicDialog>;
 }
 
 function PlanEditor({day,timezone,plan,suggestions,onSubmit,onDelete,onBack}:{
@@ -89,11 +85,16 @@ function PlanEditor({day,timezone,plan,suggestions,onSubmit,onDelete,onBack}:{
         <button type="button" className="icon-button" aria-label={item.title+" 제거"} disabled={busy} onClick={()=>setItems(items.filter(current=>current.id!==item.id))}><X size={16}/></button>
       </div></li>)}
     </ol>}
-    {error&&<p className="plan-error" role="alert">{error}</p>}
-    {confirmDelete&&<div className="plan-confirm"><p>이 날짜의 아침 계획을 삭제할까요?</p><button type="button" className="button secondary" disabled={busy} onClick={()=>void save(true)}>삭제하기</button>
-      <button type="button" className="button secondary" disabled={busy} onClick={()=>setConfirmDelete(false)}>삭제 취소</button></div>}
+    {!confirmDelete&&error&&<p className="plan-error" role="alert">{error}</p>}
+    {confirmDelete&&<ClassicDialog title="이 날짜의 아침 계획을 삭제할까요?" alert busy={busy} onDismiss={()=>{setConfirmDelete(false);setError("");}}>
+      {error&&<p className="plan-error" role="alert">{error}</p>}
+      <div className="plan-actions">
+        <button type="button" className="button secondary" disabled={busy} onClick={()=>{setConfirmDelete(false);setError("");}}>삭제 취소</button>
+        <button type="button" className="button danger-button" disabled={busy} onClick={()=>void save(true)}>삭제하기</button>
+      </div>
+    </ClassicDialog>}
     <div className="plan-actions">
-      {plan&&!confirmDelete&&<button type="button" className="button secondary" disabled={busy} onClick={()=>setConfirmDelete(true)}><Trash2 size={16}/>계획 삭제</button>}
+      {plan&&<button type="button" className="button secondary" disabled={busy} aria-haspopup="dialog" onClick={()=>{setError("");setConfirmDelete(true);}}><Trash2 size={16}/>계획 삭제</button>}
       <button type="button" className="button secondary" disabled={busy} onClick={onBack}>취소</button>
       <button type="button" className="button primary" disabled={busy||!items.length} onClick={()=>void save()}>계획 저장</button>
     </div>
@@ -142,12 +143,12 @@ export default function SleepPlan({active,demo,coaching}:{active:boolean;demo:bo
 
   function show(next:typeof mode){
     setError("");setNotice("");setMode(next);
-    requestAnimationFrame(()=>section.current?.scrollIntoView({block:"start"}));
+    if(next==="editor"||mode==="editor")requestAnimationFrame(()=>section.current?.scrollIntoView({block:"start"}));
   }
   function edit(day:string){setEditorDay(day);show("editor");}
   async function saveSchedule(settings:Schedule) {
-    await saveSleepSchedule(settings);
-    setData(null);
+    const saved=await saveSleepSchedule(settings);
+    setData(current=>current?{...current,schedule:saved}:current);
     show(null);setNotice("취침·기상 목표를 저장했어요.");setRetry(count=>count+1);
   }
   function update(date:string,plan:Plan|null) {
@@ -187,32 +188,19 @@ export default function SleepPlan({active,demo,coaching}:{active:boolean;demo:bo
       {demo?<section className="panel"><h2>수면 계획</h2><p>체험 모드에서는 목표 시간이나 아침 계획을 저장하지 않아요.</p></section>
       : <>
         {notice&&<p role="status" className="plan-notice">{notice}</p>}
-        {error&&<div role="alert" className="panel plan-error">{error} <button type="button" className="button secondary" onClick={()=>{setError("");setRetry(count=>count+1);}}>다시 불러오기</button></div>}
+        {error&&mode!=="recommendation"&&<div role="alert" className="panel plan-error">{error} <button type="button" className="button secondary" onClick={()=>{setError("");setRetry(count=>count+1);}}>다시 불러오기</button></div>}
         {!data&&!error&&<section className="panel" role="status">계획을 불러오는 중이에요.</section>}
-        {schedule&&overview&&recommendation&&(mode==="schedule"?<SleepAlarms settings={schedule} coaching={coaching} onSave={saveSchedule} onBack={()=>show(null)}/>
-        : mode==="editor"?<PlanEditor key={editorDay} day={editorDay} timezone={overview.timezone}
+        {schedule&&overview&&recommendation&&(mode==="editor"?<PlanEditor key={editorDay} day={editorDay} timezone={overview.timezone}
             plan={editorDay===overview.today?overview.today_plan:overview.next_plan}
             suggestions={overview.suggestions} onSubmit={savePlan} onDelete={deletePlan} onBack={()=>show(null)}/>
-        : mode==="recommendation"&&recommendation.status==="available"?<section className="panel plan-recommendation">
-          <h2><Sparkles size={19}/> 추천 취침 시간</h2>
-          <p className="plan-recommendation-time">{recommendation.bedtime}</p>
-          <p>{dateLabel(recommendation.bed_date)} · {recommendation.timezone}</p>
-          <dl><div><dt>사용한 기록</dt><dd>최근 {recommendation.lookback_days}일 중 {recommendation.valid_nights}일</dd></div>
-            <div><dt>기기 기록의 대표 시작·종료 시각</dt><dd>{recommendation.start_typical} ~ {recommendation.end_typical}</dd></div>
-            <div><dt>기기 기록 수면 시간 중앙값</dt><dd>{minutes(recommendation.sleep_minutes)}</dd></div>
-            <div><dt>기기 기록 구간 중앙값</dt><dd>{minutes(recommendation.window_minutes)}</dd></div>
-          </dl>
-          <p className="muted">{dateLabel(recommendation.wake_date)} 목표 기상 {schedule.wake_time}{recommendation.wake_time!==schedule.wake_time?" (일광 절약 시간 반영 "+recommendation.wake_time+")":""}에서 기기 기록 구간의 중앙값을 빼서 계산했어요. 기기 기록 구간에는 각성이나 미기록 시간이 포함될 수 있어요.</p>
-          <div className="plan-actions"><button type="button" className="button secondary" disabled={applying} onClick={()=>show(null)}>취소</button>
-            <button type="button" className="button primary" disabled={applying} onClick={()=>void applyRecommendation()}>취침 목표에 적용</button></div>
-        </section>:<>
+        :<>
           <section className="panel plan-schedule">
-            <div className="panel-heading"><div><h2><CalendarDays size={19}/> 수면 스케줄</h2></div><button type="button" className="button secondary" onClick={()=>show("schedule")}>목표 설정</button></div>
+            <div className="panel-heading"><div><h2><CalendarDays size={19}/> 수면 스케줄</h2></div><button type="button" className="button secondary" aria-haspopup="dialog" onClick={()=>show("schedule")}>목표 설정</button></div>
             {schedule.saved?<><dl className="plan-goals"><div><dt><Moon size={17}/> 취침 목표</dt><dd>{schedule.bedtime}</dd></div><div><dt><Sun size={17}/> 기상 목표</dt><dd>{schedule.wake_time}</dd></div></dl>
               <p className="muted">{schedule.timezone}</p></>:<p>저장한 취침·기상 목표가 없어요.</p>}
             <div className="plan-suggestion"><h3><Sparkles size={17}/> 추천 취침 시간</h3>
               {recommendation.status==="available"?<><strong>{recommendation.bedtime}</strong>
-                <button type="button" className="button secondary" onClick={()=>show("recommendation")}>계산 근거 보기</button></>
+                <button type="button" className="button secondary" aria-haspopup="dialog" onClick={()=>show("recommendation")}>계산 근거 보기</button></>
               : <p>{recommendation.status==="no_goal"?"기상 목표를 설정하면 취침 시간을 계산할 수 있어요.":"추천에 사용할 수면 기록이 부족해요."}</p>}
               <small>최근 {recommendation.lookback_days}일 유효 기록 {recommendation.valid_nights}일 · 최소 {recommendation.minimum_nights}일 필요</small>
             </div>
@@ -236,6 +224,21 @@ export default function SleepPlan({active,demo,coaching}:{active:boolean;demo:bo
         </>)}
       </>}
     </div>
+    {active&&schedule&&mode==="schedule"&&<SleepAlarms settings={schedule} coaching={coaching} onSave={saveSchedule} onBack={()=>show(null)}/>}
+    {active&&schedule&&mode==="recommendation"&&recommendation?.status==="available"&&
+      <ClassicDialog className="plan-recommendation" title="추천 취침 시간" description={dateLabel(recommendation.bed_date)+" · "+recommendation.timezone}
+        busy={applying} onDismiss={()=>show(null)}>
+        <p className="plan-recommendation-time">{recommendation.bedtime}</p>
+        <dl><div><dt>사용한 기록</dt><dd>최근 {recommendation.lookback_days}일 중 {recommendation.valid_nights}일</dd></div>
+          <div><dt>기기 기록의 대표 시작·종료 시각</dt><dd>{recommendation.start_typical} ~ {recommendation.end_typical}</dd></div>
+          <div><dt>기기 기록 수면 시간 중앙값</dt><dd>{minutes(recommendation.sleep_minutes)}</dd></div>
+          <div><dt>기기 기록 구간 중앙값</dt><dd>{minutes(recommendation.window_minutes)}</dd></div>
+        </dl>
+        <p className="muted">{dateLabel(recommendation.wake_date)} 목표 기상 {schedule.wake_time}{recommendation.wake_time!==schedule.wake_time?" (일광 절약 시간 반영 "+recommendation.wake_time+")":""}에서 기기 기록 구간의 중앙값을 빼서 계산했어요. 기기 기록 구간에는 각성이나 미기록 시간이 포함될 수 있어요.</p>
+        {error&&<p className="plan-error" role="alert">{error}</p>}
+        <div className="plan-actions"><button type="button" className="button secondary" disabled={applying} onClick={()=>show(null)}>취소</button>
+          <button type="button" className="button primary" disabled={applying} onClick={()=>void applyRecommendation()}>취침 목표에 적용</button></div>
+      </ClassicDialog>}
     {sheet&&<MorningSheet plan={sheet} onClose={()=>setSheet(null)} onMark={mark}/>}
   </>;
 }

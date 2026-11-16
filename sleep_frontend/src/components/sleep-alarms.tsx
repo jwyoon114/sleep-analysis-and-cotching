@@ -1,8 +1,9 @@
 "use client";
 
 import {useState} from "react";
-import {Bell, Moon, Sun} from "lucide-react";
+import {Moon, Sun} from "lucide-react";
 import {api,type Coaching} from "@/lib/sleep";
+import ClassicDialog from "./classic-dialog";
 
 export type Schedule={bedtime:string;wake_time:string;timezone:string;enabled:boolean;coaching_id?:string|null;desktop_available:boolean;saved:boolean};
 
@@ -27,8 +28,8 @@ export default function SleepAlarms({settings,coaching,onSave,onBack}:{
     finally{setBusy(false);}
   }
 
-  return <section className="panel alarm-panel">
-    <div className="panel-heading"><div><h2><Bell size={19}/> 수면 스케줄 설정</h2><p>목표 취침 시간과 기상 시간을 설정하세요.</p></div></div>
+  return <ClassicDialog className="alarm-panel" title="수면 스케줄 설정" description="목표 취침 시간과 기상 시간을 설정하세요."
+    busy={busy} onDismiss={onBack}>
     {!draft.desktop_available&&<p className="muted">휴대폰 알람과 푸시 알림은 아직 지원되지 않아요. 취침·기상 목표는 저장할 수 있어요.</p>}
     {proposal?.bedtime&&proposal.wake_time&&coaching&&<div className="soft-info"><div>
       <strong>이 코칭에 저장된 제안</strong><p>{proposal.bedtime} – {proposal.wake_time} · {proposal.timezone}</p><p>{proposal.reason}</p>
@@ -40,9 +41,9 @@ export default function SleepAlarms({settings,coaching,onSave,onBack}:{
     <form onSubmit={event=>{event.preventDefault();void save();}}>
       <fieldset disabled={busy}>
         <div className="alarm-fields">
-          <label><Moon size={16}/> 취침 목표<input type="time" name="bedtime" required value={draft.bedtime} onChange={e=>setDraft(s=>({...s,bedtime:e.target.value,coaching_id:null}))}/></label>
-          <label><Sun size={16}/> 기상 목표<input type="time" name="wake_time" required value={draft.wake_time} onChange={e=>setDraft(s=>({...s,wake_time:e.target.value,coaching_id:null}))}/></label>
-          <label>시간대<input name="timezone" required maxLength={80} value={draft.timezone} onChange={e=>setDraft(s=>({...s,timezone:e.target.value,coaching_id:null}))}/></label>
+          <label><span><Moon size={16} aria-hidden="true"/>취침 목표</span><input type="time" name="bedtime" required value={draft.bedtime} onChange={e=>setDraft(s=>({...s,bedtime:e.target.value,coaching_id:null}))}/></label>
+          <label><span><Sun size={16} aria-hidden="true"/>기상 목표</span><input type="time" name="wake_time" required value={draft.wake_time} onChange={e=>setDraft(s=>({...s,wake_time:e.target.value,coaching_id:null}))}/></label>
+          <label><span>시간대</span><input name="timezone" required maxLength={80} value={draft.timezone} onChange={e=>setDraft(s=>({...s,timezone:e.target.value,coaching_id:null}))}/></label>
         </div>
         {draft.desktop_available&&<label className="alarm-switch"><input type="checkbox" checked={draft.enabled} onChange={e=>setDraft(s=>({...s,enabled:e.target.checked}))}/> Windows PC 알람 켜기</label>}
         <div className="alarm-actions">
@@ -56,5 +57,5 @@ export default function SleepAlarms({settings,coaching,onSave,onBack}:{
       </fieldset>
     </form>
     {error&&<p role="alert" className="plan-error">{error}</p>}{message&&<p role="status">{message}</p>}
-  </section>;
+  </ClassicDialog>;
 }
