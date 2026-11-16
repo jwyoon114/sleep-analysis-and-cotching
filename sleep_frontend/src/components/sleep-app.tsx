@@ -282,7 +282,7 @@ export default function SleepApp() {
   const activeTab:MainTab = page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
   const backTo:Page|null = page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
-  return <div className="mobile-app" data-daljam-theme={characterId}>
+  return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page}>
     <MainNavigation active={activeTab} onNavigate={navigate}/>
     <main ref={main} className="mobile-content">
     {backTo&&<button type="button" className="dashboard-link page-back" onClick={()=>navigate(backTo)}><ArrowLeft size={19}/>{backTo==="records"?"기록 목록":backTo==="recordDetail"?"기록 상세":backTo==="account"?"마이":"홈"}</button>}

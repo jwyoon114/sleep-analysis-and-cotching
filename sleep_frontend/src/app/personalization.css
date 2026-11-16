@@ -2,47 +2,25 @@
 [data-daljam-theme="cat"] {
   --theme-art:url("/daljam-cat-night.webp");
 }
-[data-daljam-theme="raccoon"] {
+[data-daljam-theme="raccoon"],body:has(> .mobile-app[data-daljam-theme="raccoon"]) {
   --theme-art:url("/themes/raccoon-night.webp");
   --theme-page:#051c24;--theme-glow:#104354;--theme-card:#0d2e38;
   --theme-line:#32636d;--theme-accent:#a0e8d8;--theme-active:#1a5260;
 }
-[data-daljam-theme="dog"] {
+[data-daljam-theme="dog"],body:has(> .mobile-app[data-daljam-theme="dog"]) {
   --theme-art:url("/themes/dog-night.webp");
   --theme-page:#21161e;--theme-glow:#633c2c;--theme-card:#36252d;
   --theme-line:#805b4d;--theme-accent:#ffcf96;--theme-active:#5d3b36;
 }
-[data-daljam-theme="rabbit"] {
+[data-daljam-theme="rabbit"],body:has(> .mobile-app[data-daljam-theme="rabbit"]) {
   --theme-art:url("/themes/rabbit-night.webp");
   --theme-page:#24152e;--theme-glow:#5b3158;--theme-card:#3c2445;
   --theme-line:#7e527e;--theme-accent:#ffc4e6;--theme-active:#653662;
 }
 
-.mobile-app[data-daljam-theme]:not([data-daljam-theme="cat"]) {
-  --paper:var(--theme-card);--line:var(--theme-line);--purple:var(--theme-accent);--lavender:var(--theme-active);
-  background:radial-gradient(ellipse at 75% 0,var(--theme-glow),transparent 500px),var(--theme-page);
-}
-.mobile-app[data-daljam-theme]:not([data-daljam-theme="cat"]) .mobile-hero.illustrated {
-  background-image:linear-gradient(0deg,var(--theme-page),transparent 40%),
-                   linear-gradient(90deg,var(--theme-page),transparent 75%),var(--theme-art);
-  background-size:100% 100%,100% 100%,auto 108%;
-  background-position:center,right,right -12px center;
-}
-.mobile-app[data-daljam-theme]:not([data-daljam-theme="cat"]) .mobile-hero.illustrated .hero-heading > div {
-  max-width:min(65%,36ch);min-width:0;
-}
-[data-daljam-theme]:not([data-daljam-theme="cat"]) .hero-brand {color:var(--theme-accent);}
-.mobile-app[data-daljam-theme]:not([data-daljam-theme="cat"]) :is(.panel,.dashboard-card,.main-tabs,.dashboard-feature,.record-row) {
-  background:linear-gradient(140deg,var(--theme-card),color-mix(in srgb,var(--theme-card),var(--theme-page) 68%));
-  border-color:var(--theme-line);
-}
-.mobile-app[data-daljam-theme]:not([data-daljam-theme="cat"]) .dashboard-coaching-card {
-  background-image:linear-gradient(90deg,var(--theme-card) 35%,transparent 120%),var(--theme-art);
-  background-size:100% 100%,auto 145%;background-repeat:no-repeat;background-position:center,right 76%;
-}
-[data-daljam-theme]:not([data-daljam-theme="cat"]) .main-tabs button[aria-current="page"] {
-  background:var(--theme-active);color:var(--theme-accent);
-}
+.mobile-app[data-daljam-theme="raccoon"] {--theme-muted:#bcdfdb;--theme-moonlight:#c5f6d6;}
+.mobile-app[data-daljam-theme="dog"] {--theme-muted:#e1cfc9;--theme-moonlight:#ffdb9f;}
+.mobile-app[data-daljam-theme="rabbit"] {--theme-muted:#e9cede;--theme-moonlight:#ffc4dd;}
 
 /* Onboarding */
 .personalization-screen,.preference-editor,.profile-setting.preference-profile-row {
