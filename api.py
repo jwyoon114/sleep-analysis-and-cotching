@@ -2,12 +2,14 @@
 from typing import Literal
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
+from account_personalization import Preferences, get_personalization, save_personalization
 import coaching_service
+import morning_plans
 import history_service
 import backup_policy
 import sleep_alarms
@@ -124,6 +126,45 @@ def test_alarm(user=Depends(require_user)):
     return {'status':'started'}
 
 
+@app.get("/plans")
+def plan_overview(user=Depends(require_user)):
+    return morning_plans.overview(user["id"])
+
+
+@app.get("/plans/bedtime")
+def bedtime_recommendation(user=Depends(require_user)):
+    return morning_plans.recommend_bedtime(user["id"])
+
+
+@app.post("/plans/morning-view")
+def open_morning_plan(user=Depends(require_user)):
+    return {"plan": morning_plans.claim_morning_view(user["id"])}
+
+
+@app.post("/plans/{day}")
+def save_morning_plan(day: date, request: morning_plans.PlanRequest, user=Depends(require_user)):
+    try:
+        return {"plan": morning_plans.save(user["id"], day, request)}
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+
+
+@app.patch("/plans/{day}")
+def complete_morning_activity(day: date, request: morning_plans.CompletionRequest, user=Depends(require_user)):
+    try:
+        return {"plan": morning_plans.mark(user["id"], day, request)}
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+
+
+@app.delete("/plans/{day}")
+def delete_morning_plan(day: date, user=Depends(require_user)):
+    if not morning_plans.remove(user["id"], day):
+        raise HTTPException(404, "저장된 계획이 없어요.")
+    return {"plan": None}
+
+
+
 @app.post("/auth/register", status_code=201)
 def sign_up(request: Registration):
     try:
@@ -147,6 +188,28 @@ def sign_in(request: Credentials):
 @app.get("/auth/me")
 def me(user=Depends(require_user)):
     return {"user": user}
+
+
+@app.get("/auth/personalization")
+def personalization(response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": get_personalization(user["id"])}
+
+
+@app.post("/auth/personalization")
+def complete_personalization(request: Preferences, response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": save_personalization(user["id"], request, complete=True)}
+
+
+@app.patch("/auth/personalization")
+def edit_personalization(request: Preferences, response: Response, user=Depends(require_user)):
+    profile = save_personalization(user["id"], request)
+    if profile is None:
+        raise HTTPException(409, "먼저 첫 설정을 완료해 주세요.")
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"personalization": profile}
+
 
 
 @app.patch("/auth/me")

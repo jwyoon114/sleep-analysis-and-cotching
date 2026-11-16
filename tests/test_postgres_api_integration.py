@@ -74,6 +74,17 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                 self.assertEqual(client.post('/auth/login', json={'username': 'alice-test', 'password': 'wrong'}).status_code, 401)
                 self.assertEqual(client.get('/watch/sessions').status_code, 401)
 
+            with self.subTest('personalization persists for the authenticated account only'):
+                self.assertIsNone(client.get('/auth/personalization', headers=a).json()['personalization'])
+                preference = {'mbti': None, 'speech': 'casual', 'intensity': 'direct', 'allow_profanity': True, 'character': 'rabbit'}
+                saved_profile = client.post('/auth/personalization', headers=a, json=preference).json()['personalization']
+                self.assertEqual(saved_profile, {**preference, 'completed_at': saved_profile['completed_at']})
+                self.assertIsNone(client.get('/auth/personalization', headers=b).json()['personalization'])
+                changes = {**preference, 'allow_profanity': False, 'intensity': 'firm', 'character': 'raccoon'}
+                updated = client.patch('/auth/personalization', headers=a, json=changes).json()['personalization']
+                self.assertEqual(updated, {**changes, 'completed_at': saved_profile['completed_at']})
+                self.assertEqual(client.get('/auth/personalization', headers=a).json()['personalization'], updated)
+
             with self.subTest('concurrent imports are idempotent and stages survive reconnection'):
                 def upload(_):
                     return health_records.import_export(EXAMPLE_JSON, 'synthetic.json', alice)
@@ -110,6 +121,23 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                 self.assertEqual(stored['coaching'], answer)
                 self.assertEqual(stored['context'], context)
                 self.assertEqual(coaching_service.list_coaching(bob, sid), [])
+
+                # A second generation reads fresh settings; the first stays immutable.
+                self.assertEqual(context['expression']['speech'], 'casual')
+                self.assertEqual(context['expression']['intensity'], 'firm')
+                self.assertIsNone(context['expression']['mbti'])
+                client.patch('/auth/personalization', headers=a,
+                             json={**changes, 'speech': 'polite', 'intensity': 'direct', 'mbti': 'ENTJ'}).raise_for_status()
+                new = client.post('/coach', headers=a, json={'analysis_id': sid}).json()
+                self.assertEqual(new['context']['expression']['speech'], 'polite')
+                self.assertEqual(new['context']['expression']['mbti'], 'ENTJ')
+                self.assertNotEqual(new['coaching'], answer)
+                histories = client.get('/watch/sessions/' + sid + '/coaching', headers=a).json()['history']
+                self.assertEqual([item['coaching'] for item in histories], [new['coaching'], answer])
+                self.assertEqual(histories[1]['context'], context)
+                # This suite tests the dedicated trash flow with one active advice below.
+                self.assertTrue(coaching_service.delete_coaching(alice, sid, new['id']))
+
 
             with self.subTest('trash restore and approved permanent-deletion guard'):
                 self.assertEqual(client.delete('/watch/sessions/' + sid, headers=b).status_code, 404)
@@ -162,11 +190,21 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                         # Test the SQL without enabling the guarded public API.
                         db.execute('INSERT INTO coaching VALUES(?,?,?,?,?,?)', ('synthetic-cross-reference', alice, health_sid, '보존할 원문', '{}', '2026-11-11'))
                         db.execute('INSERT INTO coaching_context VALUES(?,?)', ('synthetic-cross-reference', json.dumps({'record_ids': [sid, health_sid]})))
+                        db.execute('INSERT INTO coaching VALUES(?,?,?,?,?,?)', (
+                            'synthetic-versioned-reference', alice, health_sid, '버전 있는 원문', '{}', '2026-11-12'))
+                        saved_expression = {'expression': context['expression']}
+                        db.execute('INSERT INTO coaching_context VALUES(?,?)', ('synthetic-versioned-reference',
+                                   json.dumps({**saved_expression, 'record_ids': [sid, health_sid], 'input_summary': {}})))
                         self.assertFalse(health_records.erase_session_rows(db, sid, bob))
                         self.assertTrue(health_records.erase_session_rows(db, sid, alice))
                         self.assertEqual(db.execute('SELECT count(*) FROM samples WHERE subject=?', (alice,)).fetchone()[0], 0)
                         self.assertIsNone(db.execute('SELECT payload FROM coaching_context WHERE coaching_id=?', ('synthetic-cross-reference',)).fetchone())
                         self.assertEqual(db.execute('SELECT text FROM coaching WHERE id=?', ('synthetic-cross-reference',)).fetchone()[0], '보존할 원문')
+                        payload = db.execute('SELECT payload FROM coaching_context WHERE coaching_id=?',
+                                             ('synthetic-versioned-reference',)).fetchone()[0]
+                        self.assertEqual(json.loads(payload), saved_expression)
+                        self.assertEqual(db.execute('SELECT text FROM coaching WHERE id=?',
+                                                    ('synthetic-versioned-reference',)).fetchone()[0], '버전 있는 원문')
                         raise RollbackProbe()
                 with self.assertRaises(RollbackProbe):
                     with closing(health_records.connect()) as db, db:
@@ -175,6 +213,25 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                         self.assertIsNotNone(db.execute('SELECT id FROM accounts WHERE id=?', (bob,)).fetchone())
                         raise RollbackProbe()
                 self.assertEqual(len(health_records.list_sessions(alice)), 2)
+
+            with self.subTest('morning plans persist with PostgreSQL and remain account-owned'):
+                client.post('/alarms', headers=a, json={
+                    'bedtime': '22:00', 'wake_time': '00:00', 'timezone': 'Asia/Seoul', 'enabled': False,
+                }).raise_for_status()
+                overview = client.get('/plans', headers=a).json()
+                self.assertEqual(client.get('/plans/bedtime', headers=a).json()['status'], 'insufficient')
+                today = overview['today']
+                saved = client.post('/plans/'+today, headers=a, json={'activities': [{'id': 'pg', 'title': 'PG 시험'}]})
+                saved.raise_for_status()
+                self.assertEqual(client.get('/plans', headers=b).json()['today_plan'], None)
+                self.assertEqual(client.post('/plans/morning-view', headers=a).json()['plan']['date'], today)
+                self.assertIsNone(client.post('/plans/morning-view', headers=a).json()['plan'])
+                marked = client.patch('/plans/'+today, headers=a, json={'id': 'pg', 'completed': True})
+                self.assertTrue(marked.json()['plan']['activities'][0]['completed'])
+                with closing(health_records.connect()) as db:
+                    self.assertIsNotNone(db.execute('SELECT first_shown_at FROM morning_plans WHERE account_id=? AND wake_date=?',
+                                                    (alice, today)).fetchone()[0])
+                self.assertEqual(client.delete('/plans/'+today, headers=b).status_code, 404)
 
             with self.subTest('atomic request caps and alarm persistence'):
                 def reserve(_):
@@ -209,7 +266,7 @@ class PostgresAPIIntegrationTests(unittest.TestCase):
                 self.assertEqual(len(health_records.list_sessions(alice)), 2)
 
             with self.subTest('production consent is atomic and deletion works with managed backup policy'):
-                with patch.dict(os.environ, {'DALJAM_ENV': 'production', 'DALJAM_BACKUP_POLICY': 'render-pitr-7d-v1'}):
+                with patch.dict(os.environ, {'DALJAM_ENV': 'production', 'DALJAM_BACKUP_POLICY': 'render-pitr-3d-v1'}):
                     credentials = {'username': 'production-synthetic', 'password': password}
                     self.assertEqual(client.post('/auth/register', json=credentials).status_code, 400)
                     credentials.update(privacy_consent=True, health_consent=True, policy_version='2026-11-12-v1', overseas_consent=True, adult_confirmed=True)

@@ -2,7 +2,9 @@
 import os
 
 POLICY_VERSION = '2026-11-12-v1'
-BACKUP_POLICY = 'render-pitr-7d-v1'
+BACKUP_POLICY = 'render-pitr-3d-v1'
+PITR_RETENTION_DAYS = 3
+MANAGED_EXPORT_RETENTION_DAYS = 7
 
 
 def is_production():

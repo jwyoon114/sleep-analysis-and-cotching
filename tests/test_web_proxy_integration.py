@@ -88,6 +88,17 @@ class WebProxyTests(unittest.TestCase):
                 self.assertNotIn('token', json.loads(response.body))
                 self.assertTrue(any(c.name == 'sleep_session' and c.has_nonstandard_attr('HttpOnly') for c in jar))
                 self.assertEqual(request('/api/sleep/auth/me').status, 200)
+                profile_path = '/api/sleep/auth/personalization'
+                self.assertEqual(json.loads(request(profile_path).body), {'personalization': None})
+                preferences = {'mbti': 'INFJ', 'speech': 'polite', 'intensity': 'firm', 'character': 'dog'}
+                self.assertEqual(request(profile_path, 'POST', preferences).status, 403)
+                saved = request(profile_path, 'POST', preferences, {'Origin': base})
+                self.assertEqual(saved.status, 200)
+                snapshot = json.loads(saved.body)['personalization']
+                updated = request(profile_path, 'PATCH', {**preferences, 'speech': 'casual'}, {'Origin': base})
+                self.assertEqual(updated.status, 200)
+                self.assertEqual(json.loads(updated.body)['personalization'], {**snapshot, 'speech': 'casual'})
+                self.assertEqual(json.loads(request(profile_path).body)['personalization']['speech'], 'casual')
                 self.assertEqual(request('/api/sleep/internal-not-allowed').status, 404)
                 self.assertEqual(request('/api/mobile/health-sync', 'POST', {}).status, 401)
                 # Use an actual oversized body; a false Content-Length can
