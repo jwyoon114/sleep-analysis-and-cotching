@@ -36,7 +36,7 @@ export default function PwaInstall() {
       <button type="button" ref={trigger} className="button secondary app-install-guide" onClick={() => setOpen(true)}>
         <Smartphone size={16} aria-hidden="true"/> 설치 안내
       </button>
-      <small id="apk-requirements">테스트 버전 · Android 9 이상</small>
+      <small id="apk-requirements">v0.1.1 테스트 · Android 9 이상 · 이전 버전은 재설치 필요</small>
     </div>
     <dialog ref={dialog} className="pwa-dialog" aria-labelledby="app-install-title" onClose={() => {
       setOpen(false);
@@ -48,7 +48,8 @@ export default function PwaInstall() {
       <h2 id="app-install-title">휴대폰에 달잠 설치하기</h2>
       <section aria-labelledby="galaxy-install-title">
         <h3 id="galaxy-install-title">갤럭시 · Android 앱</h3>
-        <p><strong>테스트 버전 · Android 9 이상</strong></p>
+        <p><strong>v0.1.1 아이콘 수정 테스트 버전 · Android 9 이상</strong></p>
+        <p>이전 v0.1.0 테스트 앱은 서명이 달라 삭제 후 다시 설치해야 해요. 휴대폰의 로그인·연결 설정이 초기화되므로 같은 계정으로 로그인하고 건강앱 권한과 연결을 다시 설정해 주세요. 서버에 저장된 계정과 수면 기록은 유지돼요.</p>
         <p>APK를 내려받아 열고 Android의 설치 안내를 따라 주세요. 필요한 경우 다운로드에 사용한 브라우저에 이 앱을 설치할 권한을 허용하세요.</p>
         <p>달잠에 로그인한 뒤 삼성 헬스의 Health Connect 수면 공유를 켜세요. 달잠의 건강앱 연결에서 삼성 헬스를 선택하고, 수면 읽기와 서버 전송에 동의하면 앱을 열어 기록을 동기화할 수 있어요.</p>
         <a className="button primary app-download-button" href={APK_URL} download="daljam-android.apk">
