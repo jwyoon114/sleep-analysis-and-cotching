@@ -156,6 +156,9 @@
 .mobile-app .footer {font-size:12px;flex-wrap:wrap;}
 .mobile-app .empty {min-height:150px;}
 .mobile-app .footer span {color:var(--muted);}
+.mobile-app .footer > span:last-child {
+  max-width:min(100%,205px);margin-inline-start:auto;word-break:keep-all;
+}
 .mobile-app :is(.record-detail,.comparison-stats,.account-grid) {min-width:0;}
 .mobile-app .table-scroll {overflow:auto;}
 .mobile-app .modal-overlay {z-index:70;}
