@@ -1,0 +1,36 @@
+name: Release safety rehearsal
+
+on:
+  push:
+    branches: [feature/release-candidate, feature/final-release-integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Rehearse Linux startup, shutdown, restart and recovery
+        shell: bash
+        env:
+          DALJAM_TEST_RELEASE_DOCKER: "1"
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: |
+          test "$(docker info --format '{{.OSType}}')" = linux
+          export DALJAM_TEST_POSTGRES_BIN="$(pg_config --bindir)"
+          test -x "$DALJAM_TEST_POSTGRES_BIN/initdb"
+          test -x "$DALJAM_TEST_POSTGRES_BIN/pg_restore"
+          python3 -m venv "$RUNNER_TEMP/daljam-release"
+          source "$RUNNER_TEMP/daljam-release/bin/activate"
+          python -m pip install -r requirements-server.txt httpx
+          python -B -m unittest discover -s tests -p test_release_recovery.py -v

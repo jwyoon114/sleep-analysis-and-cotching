@@ -70,7 +70,7 @@ class MigrationManifestTests(unittest.TestCase):
 
     def test_out_of_order_manifest_fails_before_connection(self):
         directory = copy_migrations(self)
-        write_version(directory, 2, "SELECT 1;")
+        write_version(directory, 5, "SELECT 1;")
         manifest = manifest_at(directory)
         manifest["migrations"].reverse()
         write_manifest(directory, manifest)
@@ -122,18 +122,18 @@ class MigrationPostgresTests(unittest.TestCase):
         with closing(source_schema()) as source:
             expected = table_names(source)
         self.assertEqual(len(expected), 20)
-        self.assertEqual(runner.apply_migrations(), (1, 2))
+        self.assertEqual(runner.apply_migrations(), (1, 2, 3, 4))
         self.assertEqual(runner.apply_migrations(), ())
         with self.cluster.connect(self.database) as connection:
             self.assertTrue(connection.info.pgconn.ssl_in_use)
-            self.assertEqual(self.public_tables(connection), expected | {"daljam_schema_migrations", "account_consents"})
+            self.assertEqual(self.public_tables(connection), expected | {"daljam_schema_migrations", "account_consents", "account_personalization", "morning_plans"})
             rows = connection.execute(
                 "SELECT contype, count(*) AS total FROM pg_catalog.pg_constraint "
                 "WHERE connamespace = 'public'::regnamespace "
                 "AND conrelid <> 'public.daljam_schema_migrations'::regclass "
                 "AND contype IN ('p','f','u') GROUP BY contype"
             )
-            self.assertEqual({row["contype"]: row["total"] for row in rows}, {"p": 20, "f": 18, "u": 3})
+            self.assertEqual({row["contype"]: row["total"] for row in rows}, {"p": 22, "f": 20, "u": 3})
             indexes = {row["indexname"] for row in connection.execute(
                 "SELECT indexname FROM pg_catalog.pg_indexes WHERE schemaname = 'public'"
             )}
@@ -147,6 +147,54 @@ class MigrationPostgresTests(unittest.TestCase):
             first = runner.load_migrations()[0]
             self.assertEqual((row["version"], row["name"], row["sha256"]), (1, first.name, first.sha256))
             self.assertIsNotNone(row["applied_at"])
+
+    def test_morning_plan_upgrade_preserves_existing_rows_and_is_idempotent(self):
+        directory = copy_migrations(self)
+        previous = manifest_at(directory)
+        previous["migrations"].pop()
+        write_manifest(directory, previous)
+        self.assertEqual(runner.apply_migrations(directory), (1, 2, 3))
+        with self.cluster.connect(self.database) as connection:
+            connection.execute("INSERT INTO public.accounts VALUES ('existing', 'existing', 'fixture', 'fixture', '2026-11-10')")
+            connection.execute("INSERT INTO public.account_personalization VALUES ('existing', NULL, 'polite', 'gentle', FALSE, 'cat', '2026-11-10')")
+            connection.execute("INSERT INTO public.sessions VALUES ('existing-night', 'existing', '2026-11-10', '2026-11-11', '{}')")
+        self.assertEqual(runner.apply_migrations(), (4,))
+        self.assertEqual(runner.apply_migrations(), ())
+        with self.cluster.connect(self.database) as connection:
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM accounts").fetchone()["n"], 1)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM sessions").fetchone()["n"], 1)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM account_personalization").fetchone()["n"], 1)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM morning_plans").fetchone()["n"], 0)
+
+
+    def test_release_upgrade_from_production_preserves_account_records_and_coaching(self):
+        previous_directory = copy_migrations(self)
+        previous = manifest_at(previous_directory)
+        previous["migrations"] = previous["migrations"][:2]
+        write_manifest(previous_directory, previous)
+        self.assertEqual(runner.apply_migrations(previous_directory), (1, 2))
+        fixtures = {
+            "accounts": ("retained-account", "fixture-account", "fixture", "fixture", "2026-11-10"),
+            "sessions": ("retained-session", "retained-account", "2026-11-10", "2026-11-11", '{"asleep_minutes":380}'),
+            "coaching": ("retained-coaching", "retained-account", "retained-session", "보존할 기존 조언", "{}", "2026-11-11"),
+            "coaching_context": ("retained-coaching", '{"engine":"rules","record_ids":["retained-session"]}'),
+            "account_consents": ("retained-account", "fixture", "2026-11-10", "2026-11-10", "2026-11-10", "2026-11-10"),
+        }
+        with self.cluster.connect(self.database) as connection:
+            for table, values in fixtures.items():
+                connection.execute(f"INSERT INTO {table} VALUES ({','.join(['%s'] * len(values))})", values)
+        self.assertEqual(runner.apply_migrations(), (3, 4))
+        self.assertEqual(runner.apply_migrations(), ())
+        with self.cluster.connect(self.database) as connection:
+            for table, values in fixtures.items():
+                row, = connection.execute(f"SELECT * FROM {table}").fetchall()
+                self.assertEqual(tuple(row.values()), values)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM account_personalization").fetchone()["n"], 0)
+            self.assertEqual(connection.execute("SELECT count(*) AS n FROM morning_plans").fetchone()["n"], 0)
+            # The previously deployed manifest cannot start against an advanced database.
+            with self.assertRaises(runner.MigrationHistoryError):
+                runner.inspect_history(connection, runner.load_migrations(previous_directory))
+
 
     def test_saved_checksum_detects_changed_sql_even_with_updated_manifest(self):
         runner.apply_migrations()
@@ -179,24 +227,24 @@ class MigrationPostgresTests(unittest.TestCase):
             runner.apply_migrations(directory)
         with self.cluster.connect(self.database) as connection:
             self.assertEqual(self.public_tables(connection), set())
-        self.assertEqual(runner.apply_migrations(), (1, 2))
+        self.assertEqual(runner.apply_migrations(), (1, 2, 3, 4))
 
     def test_followup_is_recorded_and_migration_cannot_commit_early(self):
-        self.assertEqual(runner.apply_migrations(), (1, 2))
+        self.assertEqual(runner.apply_migrations(), (1, 2, 3, 4))
         directory = copy_migrations(self)
-        write_version(directory, 3, "CREATE TABLE public.synthetic_extra (id BIGINT PRIMARY KEY);")
-        write_version(directory, 4, "CREATE TABLE public.synthetic_partial (id BIGINT); COMMIT;")
-        with self.assertRaisesRegex(runner.MigrationError, "버전 4 적용"):
+        write_version(directory, 5, "CREATE TABLE public.synthetic_extra (id BIGINT PRIMARY KEY);")
+        write_version(directory, 6, "CREATE TABLE public.synthetic_partial (id BIGINT); COMMIT;")
+        with self.assertRaisesRegex(runner.MigrationError, "버전 6 적용"):
             runner.apply_migrations(directory)
         with self.cluster.connect(self.database) as connection:
             self.assertNotIn("synthetic_extra", self.public_tables(connection))
             self.assertNotIn("synthetic_partial", self.public_tables(connection))
             rows = connection.execute("SELECT version FROM public.daljam_schema_migrations").fetchall()
-            self.assertEqual(rows, [{"version": 1}, {"version": 2}])
+            self.assertEqual(rows, [{"version": 1}, {"version": 2}, {"version": 3}, {"version": 4}])
         manifest = manifest_at(directory)
         manifest["migrations"].pop()
         write_manifest(directory, manifest)
-        self.assertEqual(runner.apply_migrations(directory), (3,))
+        self.assertEqual(runner.apply_migrations(directory), (5,))
         self.assertEqual(runner.apply_migrations(directory), ())
 
     def test_concurrent_runner_waits_and_applies_initial_schema_once(self):
@@ -228,9 +276,9 @@ class MigrationPostgresTests(unittest.TestCase):
                         self.assertIsNotNone(waiting, "The second migrator did not wait on the database lock")
                 finally:
                     release.set()
-                self.assertEqual(first.result(timeout=8), (1, 2))
+                self.assertEqual(first.result(timeout=8), (1, 2, 3, 4))
                 self.assertEqual(second.result(timeout=8), ())
-            self.assertEqual(apply.call_count, 2)
+            self.assertEqual(apply.call_count, 4)
 
     def test_connection_refused_has_safe_error(self):
         with socket.socket() as unused:
@@ -259,4 +307,4 @@ class MigrationPostgresTests(unittest.TestCase):
                 runner.apply_migrations()
         with self.cluster.connect(self.database) as connection:
             self.assertEqual(self.public_tables(connection), set())
-        self.assertEqual(runner.apply_migrations(), (1, 2))
+        self.assertEqual(runner.apply_migrations(), (1, 2, 3, 4))

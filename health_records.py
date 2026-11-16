@@ -313,13 +313,20 @@ def erase_session_rows(db, analysis_id, subject):
     for table, column in (("trash_coaching", "coaching_id"), ("coaching_context", "coaching_id")):
         if table in tables:
             db.execute(f"DELETE FROM {table} WHERE {column} IN (SELECT id FROM coaching WHERE session_id=?)", (analysis_id,))
-    # A context snapshot for another coaching may also contain this record.
-    # Remove that snapshot rather than retain a second copy of deleted data.
+    # A surviving coaching may reference the erased session. Discard its input
+    # snapshot and keep only its non-record expression settings, if present.
     if "coaching_context" in tables:
         if getattr(db, 'is_postgres', False):
-            db.execute("DELETE FROM coaching_context WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(coaching_context.payload::jsonb -> 'record_ids') AS ids(value) WHERE value=?)", (analysis_id,))
+            reference = "EXISTS (SELECT 1 FROM jsonb_array_elements_text(payload::jsonb -> 'record_ids') AS ids(value) WHERE value=?)"
+            expression_only = "jsonb_build_object('expression', payload::jsonb -> 'expression')::text"
+            has_expression = "jsonb_typeof(payload::jsonb -> 'expression')='object'"
         else:
-            db.execute("DELETE FROM coaching_context WHERE EXISTS (SELECT 1 FROM json_each(coaching_context.payload, '$.record_ids') WHERE value=?)", (analysis_id,))
+            reference = "EXISTS (SELECT 1 FROM json_each(payload, '$.record_ids') WHERE value=?)"
+            expression_only = "json_object('expression', json_extract(payload, '$.expression'))"
+            has_expression = "json_type(payload, '$.expression')='object'"
+        owned_reference = "coaching_id IN (SELECT id FROM coaching WHERE account_id=?) AND " + reference
+        db.execute(f"UPDATE coaching_context SET payload={expression_only} WHERE {owned_reference} AND {has_expression}", (subject, analysis_id))
+        db.execute(f"DELETE FROM coaching_context WHERE {owned_reference}", (subject, analysis_id))
     if "trash_sessions" in tables:
         db.execute("DELETE FROM trash_sessions WHERE session_id=?", (analysis_id,))
     if "session_created" in tables:

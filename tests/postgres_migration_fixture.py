@@ -61,7 +61,8 @@ class PostgresTestCluster:
             (self.data / 'server.crt').write_bytes(cert.public_bytes(serialization.Encoding.PEM))
         (self.data / "server.key").chmod(0o600)
         with (self.data / "postgresql.conf").open("a", encoding="ascii") as file:
-            file.write(f"\nlisten_addresses = '127.0.0.1'\nport = {self.port}\nssl = on\n")
+            file.write(f"\nlisten_addresses = '127.0.0.1'\nport = {self.port}\nssl = on\n"
+                       "unix_socket_directories = ''\n")
             # Disposable test cluster only: exercise SQL/transactions, not
             # physical crash durability or production backup recovery.
             file.write("fsync = off\nsynchronous_commit = off\nfull_page_writes = off\n")
