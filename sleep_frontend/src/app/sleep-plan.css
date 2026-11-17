@@ -4,26 +4,35 @@
 .plan-screen .panel h2 svg,.morning-sheet h2 svg,.plan-screen h3 svg {color:var(--purple,#c3b8ff);}
 .plan-screen .panel-heading {gap:12px;}
 .plan-goals {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0 6px;}
-.plan-goals > div,.plan-suggestion {padding:11px;border:1px solid var(--line);border-radius:14px;background:#0b102633;}
+.plan-goals > div,.plan-suggestion {padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--surface-inset);}
 .plan-goals dt {display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);}
+.plan-goals dt svg {color:var(--purple);flex-shrink:0;}
+.plan-goals > div:last-child dt svg {color:var(--moonlight);}
 .plan-goals dd {margin:3px 0 0;font-size:25px;font-weight:700;font-variant-numeric:tabular-nums;}
-.plan-suggestion {margin-top:12px;display:grid;justify-items:start;gap:6px;}
+.plan-suggestion {
+  margin-top:12px;display:grid;justify-items:start;gap:7px;
+  background:radial-gradient(ellipse at 100% 0,var(--surface-selected),transparent 70%),var(--surface-inset);
+  border-color:var(--edge-light);box-shadow:inset 0 1px 0 #ffffff0c;
+}
 .plan-suggestion strong,.plan-recommendation-time {font-size:clamp(26px,7vw,37px);font-variant-numeric:tabular-nums;color:var(--purple);font-weight:750;}
-.plan-suggestion small,.plan-summary small {color:var(--muted);}
+.plan-suggestion small,.plan-summary small {color:var(--muted);font-size:12px;}
 .plan-screen .button,.morning-sheet .button {min-height:44px;}
 .plan-recommendation dl {display:grid;gap:8px;margin:14px 0;}
 .plan-recommendation dl > div {display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;border-bottom:1px solid var(--line);padding-bottom:7px;}
 .plan-recommendation dt {color:var(--muted);}
 .plan-recommendation dd {font-weight:650;margin:0;}
 .plan-actions {display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:12px;}
-.plan-summary,.plan-items,.plan-checklist {margin:10px 0;padding:0;list-style:none;}
-.plan-summary li,.plan-items li,.plan-checklist li {padding:5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere;}
+.plan-summary,.plan-items,.plan-checklist {display:grid;gap:6px;margin:10px 0;padding:0;list-style:none;}
+.plan-summary li,.plan-items li,.plan-checklist li {
+  padding:5px 10px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface-inset);overflow-wrap:anywhere;
+}
 .plan-summary li,.plan-items li {display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.plan-summary li {min-height:40px;}
+.plan-summary li,.plan-items li {min-height:44px;}
 .morning-plan-editor fieldset {border:0;padding:0;min-inline-size:0;margin:16px 0;}
 .morning-plan-editor legend {font-weight:750;}
 .plan-suggestions {display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
-.plan-suggestions button {white-space:normal;text-align:left;min-width:0;overflow-wrap:anywhere;max-width:100%;}
+.plan-suggestions button {white-space:normal;text-align:left;min-width:0;overflow-wrap:anywhere;max-width:100%;border-radius:999px;}
 .plan-add {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;margin:14px 0;}
 .plan-add label {min-width:0;}
 .plan-items li > div {display:flex;align-items:center;flex:none;}
@@ -35,12 +44,20 @@
 .plan-confirm button {margin:5px 5px 0 0;}
 .plan-screen fieldset {max-width:100%;}
 .plan-screen .alarm-actions {flex-wrap:wrap;gap:8px;}
+.plan-screen .alarm-fields {padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--surface-inset);}
+.plan-screen .alarm-fields label {color:var(--muted);font-size:14px;}
+.plan-screen .alarm-fields input[type="time"] {font-size:19px;font-weight:750;font-variant-numeric:tabular-nums;}
+.plan-screen .alarm-fields label:first-child svg {color:var(--purple);}
+.plan-screen .alarm-fields label:nth-child(2) svg {color:var(--moonlight);}
 .morning-sheet {
-  width:min(100%,540px);max-width:100%;max-height:calc(100dvh - 24px);overflow:auto;
-  inset:auto 0 0;margin:0 auto;padding:18px max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
-  background:var(--paper,#191f38);color:var(--ink,#f6f4ff);border:1px solid var(--line,#3c466e);border-radius:23px 23px 0 0;
+  width:min(100%,540px);max-width:100%;max-height:calc(100dvh - max(24px,env(safe-area-inset-top)));overflow:auto;
+  overscroll-behavior:contain;
+  inset:auto 0 0;margin:0 auto;padding:18px max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  background:var(--card-surface);color:var(--ink);border:1px solid var(--edge-light);border-radius:23px 23px 0 0;
+  box-shadow:0 -16px 42px #03060c62;
 }
 .morning-sheet::backdrop {background:#06081abd;}
+body:has(.morning-sheet[open]) {overflow:hidden;}
 .morning-sheet .panel-heading p {color:var(--muted);}
 .morning-sheet .plan-checklist label {display:flex;flex-direction:row;align-items:center;gap:10px;min-height:44px;font-size:15px;}
 .morning-sheet input[type="checkbox"] {width:19px;height:19px;min-height:0;flex:none;accent-color:var(--purple);}
