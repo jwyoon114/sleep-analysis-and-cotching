@@ -26,7 +26,7 @@
 
 모든 검사 통과 시 테스트한 후보·호환 이미지 자체를 `docker save`로 저장하고 `images.tar.gz`와 `manifest.json`만 Actions artifact로 남긴다. 운영 DB 덤프·실제 사용자 데이터·실행 컨테이너·DB 볼륨은 포함하지 않는다. manifest는 최종 커밋, 기존 운영 SHA, 이미지 ID, APK 및 tar SHA-256을 연결한다. CI artifact 보관은 **1일**이며, 운영 반영 전 담당자가 다운로드하고 해시를 검증해 별도 보관해야 한다. artifact 만료 전 로컬 보관이 확인되지 않으면 롤백 이미지 확보 완료로 보지 않는다. 이 workflow는 Render 배포·환경변수 수정·패키지 레지스트리 게시를 하지 않는다.
 
-이미지 보관 파일은 Linux Docker 호스트에서 `gzip -dc images.tar.gz | docker load`로 가져올 수 있다. manifest의 `images.rollback.tag`와 `images.rollback.id`를 대조한다. Render의 현재 서비스는 Git 기반이므로 로컬 tar를 Dashboard에 직접 지정할 수 없다. 실제 롤백 전에는 승인받은 레지스트리에 해당 이미지를 보관하고 image digest 배포 경로를 준비하거나, 아래 호환 소스 변경을 별도 승인된 복구 브랜치에서 Linux 검증해야 한다. 일반 Rollback 버튼으로 구버전 이미지만 되돌리지 않는다.
+이미지 보관 파일은 Linux Docker 호스트에서 `gzip -dc images.tar.gz | docker load`로 가져올 수 있다. manifest의 `images.rollback.tag`와 `images.rollback.id`를 대조한다. Render의 현재 서비스는 Git 기반이므로 로컬 tar를 Dashboard에 직접 지정할 수 없다. 이를 위해 `deploy/rollback-source.json`에 기록된 별도 복구 브랜치 `codex/rollback-compatible-20261117`와 SHA의 소스를 직접 빌드해 호환 이미지를 검증한다. 현재 운영 `76d5103`에서 새 SQL·manifest·정책 두 모듈만 추가한 복구 소스다. 비상 시에는 승인받아 Render 연결 브랜치를 이 복구 브랜치로 변경하고 기록된 SHA와 정책 값으로 배포한다. 소스 재빌드이므로 보관 이미지와 비트 단위로 같은 이미지가 생성된다고 보장하지는 않는다. 실제 공급자 설정 변경은 이 CI가 수행하지 않는다. 일반 Rollback 버튼으로 구버전 이미지만 되돌리지 않는다.
 
 Linux Docker 호스트에서 실행하려면 Python 가상환경을 만들고 PostgreSQL 서버 및 클라이언트 도구, OpenSSL을 준비한다. 아래 명령에서 `DALJAM_TEST_RELEASE_DOCKER=1`을 빼면 논리 백업·복원과 호환 API만 검증한다.
 

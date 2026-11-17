@@ -52,7 +52,7 @@ jobs:
       - name: Frontend behavior checks with Node 24
         shell: bash
         run: |
-          docker run --rm -v "$PWD/sleep_frontend:/test:ro" -w /test node:24-bookworm-slim node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs tests/demo-runtime.test.mjs tests/personalization.test.mjs tests/timeline.test.mjs tests/sleep-stage-breakdown.test.mjs
+          docker run --rm -v "$PWD:/repo:ro" -w /repo/sleep_frontend node:24-bookworm-slim node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs tests/demo-runtime.test.mjs tests/personalization.test.mjs tests/timeline.test.mjs tests/sleep-stage-breakdown.test.mjs
       - name: Retain tested candidate and compatible rollback images
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

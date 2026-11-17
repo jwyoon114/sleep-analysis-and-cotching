@@ -24,6 +24,7 @@ import postgres_migrate
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY = "76d51039bbafc7db6e46b12edaa1cbe862a0eb44"
+ROLLBACK_SOURCE = json.loads((ROOT / 'deploy/rollback-source.json').read_text(encoding='utf-8'))['commit']
 ORIGIN = "https://release-check.invalid"
 PROFILE = {
     "mbti": "ISTJ", "speech": "polite", "intensity": "gentle",
@@ -85,6 +86,16 @@ class ReleaseRecoveryTests(unittest.TestCase):
         with ZipFile(archive) as bundle:
             bundle.extractall(cls.legacy)
         cls.legacy_migrations = cls.legacy / "migrations" / "postgresql"
+        rollback_archive = cls.workspace / 'rollback-source.zip'
+        subprocess.run(['git', 'archive', '--format=zip', '-o', str(rollback_archive), ROLLBACK_SOURCE], cwd=ROOT, check=True)
+        cls.rollback_source = cls.workspace / 'rollback-source'
+        with ZipFile(rollback_archive) as bundle:
+            bundle.extractall(cls.rollback_source)
+        if postgres_migrate.load_migrations(cls.rollback_source / 'migrations/postgresql') != postgres_migrate.load_migrations():
+            raise AssertionError('Rollback migration catalog does not match the release')
+        for module in ('production_policy.py', 'backup_policy.py'):
+            if (cls.rollback_source / module).read_text(encoding='utf-8') != (ROOT / module).read_text(encoding='utf-8'):
+                raise AssertionError('Rollback policy does not match the release')
         cls.password = secrets.token_urlsafe(24)
 
     def isolated_env(self, database):
@@ -198,11 +209,7 @@ with TestClient(app) as client:
         self.old_api(self.legacy, restored, seed)
 
         compatible = self.workspace / "compatible"
-        shutil.copytree(self.legacy, compatible)
-        catalog = compatible / "migrations" / "postgresql"
-        shutil.copytree(postgres_migrate.MIGRATIONS, catalog, dirs_exist_ok=True)
-        for module in ('production_policy.py', 'backup_policy.py'):
-            shutil.copy2(ROOT / module, compatible / module)
+        shutil.copytree(self.rollback_source, compatible)
         self.python(compatible, database, "-m", "postgres_migrate")
         self.old_api(compatible, database, seed, write=True)
         self.assertEqual(self.snapshot(database, upgraded=True), after)
@@ -216,10 +223,8 @@ with TestClient(app) as client:
                        cwd=ROOT, check=True, timeout=900)
         subprocess.run(["docker", "build", "-f", "Dockerfile.production", "-t", previous, "."],
                        cwd=self.legacy, check=True, timeout=900)
-        subprocess.run(["docker", "build", "-f", "-", "-t", compatible, "."], cwd=ROOT, text=True,
-                       input=f"FROM {previous}\nCOPY migrations/postgresql/ /app/migrations/postgresql/\n"
-                             "COPY production_policy.py backup_policy.py /app/\n",
-                       check=True, timeout=120)
+        subprocess.run(['docker', 'build', '-f', 'Dockerfile.production', '-t', compatible, '.'],
+                       cwd=self.rollback_source, check=True, timeout=900)
 
         database = self.cluster.new_database()
         seed = self.seed(database)
@@ -306,7 +311,8 @@ with TestClient(app) as client:
             self.assertTrue(destination.is_relative_to(Path(os.environ['RUNNER_TEMP']).resolve()))
             destination.mkdir(parents=True, exist_ok=False)
             commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-            manifest = {'commit': commit, 'legacy_commit': LEGACY, 'backup_policy': 'render-pitr-3d-v1',
+            manifest = {'commit': commit, 'legacy_commit': LEGACY, 'rollback_source_commit': ROLLBACK_SOURCE,
+                        'backup_policy': 'render-pitr-3d-v1',
                         'apk_sha256': APK_SHA, 'images': {}, 'contains_database': False}
             tags = []
             for role, image in (('candidate', candidate), ('rollback', compatible)):
