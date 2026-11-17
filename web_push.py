@@ -1,4 +1,4 @@
-"""Opt-in, session-bound Web Push rehearsal. No scheduled sender runs in this version."""
+"""Device-owned Web Push subscriptions and gated delivery transport."""
 
 import base64
 from contextlib import closing
@@ -37,6 +37,11 @@ class Subscription(BaseModel):
     expirationTime: int | None = Field(default=None, ge=0, le=253402300799000, strict=True)
 
 
+class ReminderPreference(BaseModel):
+    model_config = {"extra": "forbid"}
+    enabled: bool = Field(strict=True)
+
+
 class TestRequest(BaseModel):
     model_config = {"extra": "forbid"}
     id: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -58,8 +63,21 @@ def decode_key(value, length):
     return raw
 
 
+def test_enabled():
+    return not is_production() and os.getenv("DALJAM_WEB_PUSH_TEST") == "1"
+
+
+def job_secret():
+    value = os.getenv("DALJAM_PUSH_JOB_SECRET", "")
+    return value if re.fullmatch(r"[A-Za-z0-9_-]{32,128}", value) else None
+
+
+def scheduled_enabled():
+    return os.getenv("DALJAM_SCHEDULED_PUSH") == "1" and job_secret() is not None
+
+
 def configuration():
-    if is_production() or os.getenv("DALJAM_WEB_PUSH_TEST") != "1" or not uses_postgres():
+    if not (test_enabled() or scheduled_enabled()) or not uses_postgres():
         return None
     key = os.getenv("DALJAM_VAPID_PRIVATE_KEY", "")
     subject = os.getenv("DALJAM_VAPID_SUBJECT", "")
@@ -100,25 +118,37 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def status(account_id, token):
+def device_hash(value):
+    return digest(value) if value and re.fullmatch(r"[a-f0-9]{64}", value) else None
+
+
+def _current(row, token_hash, device):
+    return row["device_hash"] == device if row["device_hash"] is not None else row["token_hash"] == token_hash
+
+
+def status(account_id, token, device=None):
     config = configuration()
-    if config is None:
+    if not uses_postgres():
         return {"enabled": False, "public_key": None, "devices": []}
-    now = _now()
+    token_hash = digest(token)
     with closing(connect()) as db:
         rows = db.execute(
-            "SELECT s.endpoint_id, s.token_hash, s.registered_at FROM web_push_subscriptions s "
-            "JOIN auth_tokens t ON t.token_hash=s.token_hash WHERE t.account_id=? AND t.expires_at>? "
-            "AND (s.expires_at IS NULL OR s.expires_at>?) ORDER BY s.registered_at DESC",
-            (account_id, now.isoformat(), now),
+            "SELECT endpoint_id, token_hash, device_hash, registered_at, reminders_enabled FROM web_push_subscriptions "
+            "WHERE account_id=? AND (expires_at IS NULL OR expires_at>?) ORDER BY registered_at DESC",
+            (account_id, _now()),
         ).fetchall()
-    return {"enabled": True, "public_key": config.public_key, "devices": [
-        {"id": row["endpoint_id"], "this_session": row["token_hash"] == digest(token),
+    devices = [
+        {"id": row["endpoint_id"], "this_session": _current(row, token_hash, device),
+         "durable": row["device_hash"] is not None, "reminders_enabled": row["reminders_enabled"],
          "registered_at": row["registered_at"]} for row in rows
-    ]}
+    ]
+    if config is None:
+        return {"enabled": False, "public_key": None, "devices": devices}
+    return {"enabled": True, "test_enabled": test_enabled(), "scheduled_enabled": scheduled_enabled(),
+            "public_key": config.public_key, "devices": devices}
 
 
-def subscribe(account_id, token, value):
+def subscribe(account_id, token, value, device=None):
     require_configuration()
     now = _now()
     expires = datetime.fromtimestamp(value.expirationTime / 1000, timezone.utc) if value.expirationTime is not None else None
@@ -138,28 +168,30 @@ def subscribe(account_id, token, value):
                             (token_hash, account_id, now.isoformat())).fetchone()
         if active is None:
             raise PushError(401, "다시 로그인해 주세요.")
-        db.execute(
-            "DELETE FROM web_push_subscriptions WHERE token_hash IN (SELECT token_hash FROM auth_tokens WHERE expires_at<=?) "
-            "OR expires_at<=?", (now.isoformat(), now),
-        )
+        db.execute("DELETE FROM web_push_subscriptions WHERE expires_at<=?", (now,))
         owner = db.execute(
-            "SELECT t.account_id FROM web_push_subscriptions s JOIN auth_tokens t ON t.token_hash=s.token_hash "
-            "WHERE s.endpoint_id=?", (endpoint_id,),
+            "SELECT account_id, device_hash, p256dh, auth_secret FROM web_push_subscriptions WHERE endpoint_id=?", (endpoint_id,),
         ).fetchone()
-        if owner is not None and owner["account_id"] != account_id:
-            raise PushError(409, "이 브라우저는 다른 계정에 연결되어 있어요. 그 계정에서 먼저 해제해 주세요.")
+        if owner is not None:
+            if owner["account_id"] != account_id:
+                raise PushError(409, "이 브라우저는 다른 계정에 연결되어 있어요. 그 계정에서 먼저 해제해 주세요.")
+            if owner["device_hash"] is not None and owner["device_hash"] != device:
+                if device is None or owner["p256dh"] != value.keys.p256dh or owner["auth_secret"] != value.keys.auth:
+                    raise PushError(409, "이 브라우저의 기존 구독을 확인할 수 없어요.")
+        if device:
+            other = db.execute("SELECT account_id FROM web_push_subscriptions WHERE device_hash=?", (device,)).fetchone()
+            if other and other["account_id"] != account_id:
+                raise PushError(409, "계정 전환 후 다시 로그인해 주세요.")
+            db.execute("DELETE FROM web_push_subscriptions WHERE device_hash=? AND endpoint_id<>?", (device, endpoint_id))
         if owner is None:
-            count = db.execute(
-                "SELECT count(*) FROM web_push_subscriptions s JOIN auth_tokens t ON t.token_hash=s.token_hash WHERE t.account_id=?",
-                (account_id,),
-            ).fetchone()[0]
+            count = db.execute("SELECT count(*) FROM web_push_subscriptions WHERE account_id=?", (account_id,)).fetchone()[0]
             if count >= 8:
                 raise PushError(409, "등록된 기기가 8개예요. 다른 기기를 해제한 후 다시 시도해 주세요.")
         db.execute(
-            "INSERT INTO web_push_subscriptions (endpoint_id,token_hash,endpoint,p256dh,auth_secret,expires_at,registered_at) "
-            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(endpoint_id) DO UPDATE SET token_hash=excluded.token_hash, "
+            "INSERT INTO web_push_subscriptions (endpoint_id,account_id,device_hash,token_hash,endpoint,p256dh,auth_secret,expires_at,registered_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(endpoint_id) DO UPDATE SET device_hash=excluded.device_hash, token_hash=excluded.token_hash, "
             "p256dh=excluded.p256dh, auth_secret=excluded.auth_secret, expires_at=excluded.expires_at",
-            (endpoint_id, token_hash, value.endpoint, value.keys.p256dh, value.keys.auth, expires, now),
+            (endpoint_id, account_id, device, None if device else token_hash, value.endpoint, value.keys.p256dh, value.keys.auth, expires, now),
         )
     return {"id": endpoint_id}
 
@@ -167,15 +199,41 @@ def subscribe(account_id, token, value):
 def unsubscribe(account_id, endpoint_id):
     if uses_postgres():
         with closing(connect()) as db, db:
-            db.execute(
-                "DELETE FROM web_push_subscriptions WHERE endpoint_id=? "
-                "AND token_hash IN (SELECT token_hash FROM auth_tokens WHERE account_id=?)",
-                (endpoint_id, account_id),
-            )
+            db.execute("DELETE FROM web_push_subscriptions WHERE endpoint_id=? AND account_id=?", (endpoint_id, account_id))
     return {"status": "removed"}
 
 
-def _send(subscription, config):
+def set_reminders(account_id, endpoint_id, device, enabled):
+    if not uses_postgres():
+        raise PushError(503, "이 환경에서는 Web Push를 사용할 수 없어요.")
+    if enabled:
+        if not scheduled_enabled():
+            raise PushError(503, "이 환경에서는 취침 알림 예약이 꺼져 있어요.")
+        require_configuration()
+        if device is None:
+            raise PushError(409, "이 기기를 먼저 다시 연결해 주세요.")
+    with closing(connect()) as db, db:
+        if enabled and db.execute("SELECT 1 FROM sleep_alarm_settings WHERE account_id=?", (account_id,)).fetchone() is None:
+            raise PushError(409, "취침 목표 시각을 먼저 저장해 주세요.")
+        changed = db.execute(
+            "UPDATE web_push_subscriptions SET reminders_enabled=? "
+            "WHERE account_id=? AND endpoint_id=? AND (NOT ? OR device_hash=?) "
+            "AND (expires_at IS NULL OR expires_at>?)",
+            (enabled, account_id, endpoint_id, enabled, device, _now()),
+        ).rowcount
+        if not changed:
+            raise PushError(404, "이 기기의 구독을 찾을 수 없어요.")
+    return {"reminders_enabled": enabled}
+
+
+def remove_provider_subscription(db, account_id, endpoint_id, row):
+    db.execute(
+        "DELETE FROM web_push_subscriptions WHERE account_id=? AND endpoint_id=? AND p256dh=? AND auth_secret=?",
+        (account_id, endpoint_id, row["p256dh"], row["auth_secret"]),
+    )
+
+
+def _send(subscription, config, *, kind="bedtime-test", ttl=60):
     from pywebpush import WebPushException, webpush
     from requests import RequestException, Session
 
@@ -191,8 +249,8 @@ def _send(subscription, config):
             response = webpush(
                 {"endpoint": subscription["endpoint"], "keys": {
                     "p256dh": subscription["p256dh"], "auth": subscription["auth_secret"]}},
-                data=json.dumps({"kind": "bedtime-test"}), vapid_private_key=config.private_key,
-                vapid_claims={"sub": config.subject}, ttl=60, timeout=5, requests_session=session,
+                data=json.dumps({"kind": kind}), vapid_private_key=config.private_key,
+                vapid_claims={"sub": config.subject}, ttl=ttl, timeout=5, requests_session=session,
             )
             return response.status_code
         except WebPushException as error:
@@ -201,23 +259,23 @@ def _send(subscription, config):
             return None
 
 
-def send_test(account_id, token, endpoint_id):
+def send_test(account_id, token, endpoint_id, device=None):
+    if not test_enabled():
+        raise PushError(503, "테스트 알림은 별도 검증 환경에서만 사용할 수 있어요.")
     config = require_configuration()
     now = _now()
     token_hash = digest(token)
     cutoff = now - timedelta(minutes=1)
     with closing(connect()) as db, db:
         subscription = db.execute(
-            "SELECT s.endpoint, s.p256dh, s.auth_secret, s.expires_at FROM web_push_subscriptions s "
-            "JOIN auth_tokens t ON t.token_hash=s.token_hash "
-            "WHERE s.endpoint_id=? AND s.token_hash=? AND t.account_id=? AND t.expires_at>?",
-            (endpoint_id, token_hash, account_id, now.isoformat()),
+            "SELECT endpoint, p256dh, auth_secret, expires_at, token_hash, device_hash FROM web_push_subscriptions "
+            "WHERE endpoint_id=? AND account_id=?", (endpoint_id, account_id),
         ).fetchone()
-        if subscription is None:
+        if subscription is None or not _current(subscription, token_hash, device):
             raise PushError(404, "이 기기를 먼저 등록해 주세요.")
         expired = subscription["expires_at"] is not None and subscription["expires_at"] <= now
         if expired:
-            db.execute("DELETE FROM web_push_subscriptions WHERE endpoint_id=? AND token_hash=?", (endpoint_id, token_hash))
+            remove_provider_subscription(db, account_id, endpoint_id, subscription)
         else:
             previous = db.execute("SELECT attempted_at FROM web_push_test_limits WHERE account_id=?", (account_id,)).fetchone()
             total = db.execute("SELECT count(*) FROM web_push_test_limits WHERE attempted_at>?", (cutoff,)).fetchone()[0]
@@ -233,11 +291,7 @@ def send_test(account_id, token, endpoint_id):
     result = _send(subscription, config)
     if result in (404, 410):
         with closing(connect()) as db, db:
-            db.execute(
-                "DELETE FROM web_push_subscriptions WHERE endpoint_id=? AND token_hash=? "
-                "AND p256dh=? AND auth_secret=?",
-                (endpoint_id, token_hash, subscription["p256dh"], subscription["auth_secret"]),
-            )
+            remove_provider_subscription(db, account_id, endpoint_id, subscription)
         raise PushError(410, "구독이 만료됐어요. 이 기기를 다시 등록해 주세요.")
     if result is None or not 200 <= result < 300:
         raise PushError(502, "푸시 서비스가 알림을 접수하지 못했어요.")

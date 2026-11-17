@@ -219,7 +219,6 @@ export default function SleepPlan({active,demo,coaching}:{active:boolean;demo:bo
             </div>
           </section>
           <section className="panel"><h2><Bell size={19}/> 취침 준비 알림</h2>
-            <p>취침 30분 전 정기 알림은 검증 대기 중이에요.</p>
             {active&&<WebPushSettings/>}
             {schedule.saved&&schedule.desktop_available&&<p className="muted">Windows PC 알람 {schedule.enabled?"켜짐":"꺼짐"}</p>}
           </section>

@@ -100,6 +100,7 @@ class WebProxyTests(unittest.TestCase):
                 self.assertEqual(json.loads(updated.body)['personalization'], {**snapshot, 'speech': 'casual'})
                 self.assertEqual(json.loads(request(profile_path).body)['personalization']['speech'], 'casual')
                 self.assertEqual(request('/api/sleep/internal-not-allowed').status, 404)
+                self.assertEqual(request('/api/sleep/internal/web-push/run', 'POST', {}, {'Origin': base}).status, 404)
                 self.assertEqual(request('/api/mobile/health-sync', 'POST', {}).status, 401)
                 # Use an actual oversized body; a false Content-Length can
                 # stall Node's HTTP parser before the application is reached.

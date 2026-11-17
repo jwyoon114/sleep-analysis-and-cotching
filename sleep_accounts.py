@@ -49,7 +49,7 @@ def register(username, password, db_path=None, *, consent=None):
     return {"id": account_id, "username": username}
 
 
-def login(username, password, db_path=None):
+def login(username, password, db_path=None, *, push_device_hash=None):
     username = username.strip().casefold()
     now = datetime.now(timezone.utc)
     with closing(connect(db_path)) as db:
@@ -68,6 +68,9 @@ def login(username, password, db_path=None):
                 db.execute("DELETE FROM auth_tokens WHERE expires_at<?", (now.isoformat(),))
                 token = secrets.token_urlsafe(32)
                 db.execute("INSERT INTO auth_tokens VALUES(?,?,?)", (digest(token), row["id"], (now + timedelta(hours=24)).isoformat()))
+                if push_device_hash is not None and getattr(db, "is_postgres", False):
+                    db.execute("DELETE FROM web_push_subscriptions WHERE device_hash=? AND account_id<>?",
+                               (push_device_hash, row["id"]))
                 return {"token": token, "user": {"id": row["id"], "username": row["username"]}}
     raise AuthenticationError("아이디 또는 비밀번호를 확인하세요.")
 
@@ -82,9 +85,16 @@ def current_user(token, db_path=None):
     raise AuthenticationError("로그인이 만료됐습니다. 다시 로그인하세요.")
 
 
-def logout(token, db_path=None):
+def logout(token, db_path=None, *, push_device_hash=None):
     with closing(connect(db_path)) as db, db:
-        db.execute("DELETE FROM auth_tokens WHERE token_hash=?", (digest(token),))
+        token_hash = digest(token)
+        if getattr(db, "is_postgres", False):
+            db.execute(
+                "DELETE FROM web_push_subscriptions WHERE account_id=(SELECT account_id FROM auth_tokens WHERE token_hash=?) "
+                "AND (device_hash=? OR (device_hash IS NULL AND token_hash=?))",
+                (token_hash, push_device_hash, token_hash),
+            )
+        db.execute("DELETE FROM auth_tokens WHERE token_hash=?", (token_hash,))
 
 
 def _verify_account_action(db, account_id, password):

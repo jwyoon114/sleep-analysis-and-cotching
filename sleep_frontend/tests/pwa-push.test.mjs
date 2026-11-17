@@ -68,6 +68,16 @@ test("click focuses an existing app window after navigating to plan",async()=>{
   assert.deepEqual(calls,[]);
 });
 
+test("scheduled reminders use fixed private-safe copy and open the plan",async()=>{
+  const {calls,event}=worker();
+  await event("push",{data:{json:()=>({kind:"bedtime-reminder",body:"fixture-private",url:"https://example.invalid/"})}});
+  assert.equal(calls[0][1],"달잠 취침 준비");
+  assert.equal(calls[0][2].tag,"daljam-bedtime-reminder");
+  assert.ok(!JSON.stringify(calls).includes("fixture-private"));
+  await event("notificationclick",{notification:{tag:"daljam-bedtime-reminder",close:()=>calls.push(["close"])}});
+  assert.deepEqual(calls.slice(-2),[["close"],["open",origin+"/?tab=plan"]]);
+});
+
 test("Apple Home Screen help includes iPad with a desktop identity",()=>{
   assert.equal(isAppleMobile({userAgent:"Version/18.0 Safari",platform:"MacIntel",maxTouchPoints:5}),true);
   assert.equal(isAppleMobile({userAgent:"Version/18.0 Safari",platform:"MacIntel",maxTouchPoints:0}),false);

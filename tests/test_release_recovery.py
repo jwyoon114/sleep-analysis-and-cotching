@@ -148,7 +148,7 @@ print(json.dumps({'account': account, 'session': record, 'text': coaching['coach
             tables = ["accounts", "account_consents", "sessions", "stages", "coaching", "coaching_context"]
             if upgraded:
                 tables.extend(("account_personalization", "morning_plans", "daljam_schema_migrations",
-                               "web_push_subscriptions", "web_push_test_limits"))
+                               "web_push_subscriptions", "web_push_test_limits", "web_push_deliveries"))
             return {table: connection.execute("SELECT * FROM " + table + " ORDER BY 1, 2").fetchall()
                     for table in tables}
 
@@ -196,7 +196,7 @@ with TestClient(app) as client:
         self.cli("pg_dump", database, "--format=custom", "--file=" + str(dump))
         self.assertGreater(dump.stat().st_size, 0)
 
-        self.assertEqual(self.apply(database), (3, 4, 5))
+        self.assertEqual(self.apply(database), (3, 4, 5, 6))
         self.assertEqual(self.apply(database), ())
         with patch.dict(os.environ, self.isolated_env(database), clear=True), TestClient(app) as http:
             token = http.post("/auth/login", json={

@@ -28,6 +28,11 @@
       "version": 5,
       "file": "0005_web_push.sql",
       "sha256": "0906d34468e7af65bd7508259d1789bc4fbfc5fe3d33030ee51f801256dba730"
+    },
+    {
+      "version": 6,
+      "file": "0006_scheduled_web_push.sql",
+      "sha256": "48900df02b9fc257690f49911871446ffa29385b0fe5841a7cd39a50a85e72cf"
     }
   ]
 }

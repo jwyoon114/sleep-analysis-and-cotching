@@ -117,7 +117,7 @@ class PushPostgresTests(unittest.TestCase):
         with self.cluster.connect(self.database) as db:
             db.execute("INSERT INTO accounts (id,username,salt,password_hash,created_at) VALUES (%s,%s,%s,%s,%s)",
                        ("existing", "previous-schema", salt, password_hash(self.password, salt), "2026-11-12"))
-        self.assertEqual(postgres_migrate.apply_migrations(), (5,))
+        self.assertEqual(postgres_migrate.apply_migrations(), (5, 6))
         self.assertEqual(postgres_migrate.apply_migrations(), ())
         headers = self.login("previous-schema")
         self.assertEqual(self.client.get("/auth/me", headers=headers).status_code, 200)
