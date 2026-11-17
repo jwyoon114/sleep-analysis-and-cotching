@@ -1,0 +1,13 @@
+{
+  "commit": "ebb308dfe25d5fb10a6eabf43a24625525064ff2",
+  "branch": "codex/rollback-compatible-20261117",
+  "legacy_commit": "76d51039bbafc7db6e46b12edaa1cbe862a0eb44",
+  "backup_policy": "render-pitr-3d-v1",
+  "schema_versions": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "preserves_original_ui_and_apk": true
+}

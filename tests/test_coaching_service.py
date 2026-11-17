@@ -158,7 +158,49 @@ class CoachingServiceTests(unittest.TestCase):
         self.assertEqual(history[1:], old)
         self.assertEqual(health_records.get_owned_session(sid, self.user["id"]), selected)
 
-    def test_purging_a_reference_removes_presentation_but_preserves_the_saved_text(self):
+    def test_current_account_settings_apply_only_to_new_advice(self):
+        from account_personalization import Preferences, save_personalization
+        from coaching_expression import DEFAULT_EXPRESSION
+
+        account_id = self.user["id"]
+        sid = self.add_session("2025-11-14", 380)["analysis_id"]
+        request = api.CoachingRequest(analysis_id=sid, caffeine="있음", speech="casual")
+        starter = api.coach(request, user=self.user)
+        self.assertEqual(starter["context"]["expression"], DEFAULT_EXPRESSION)
+
+        settings = {"mbti": "ISTJ", "speech": "polite", "intensity": "gentle",
+                    "allow_profanity": False, "character": "cat"}
+        save_personalization(account_id, Preferences(**settings), complete=True, db_path=self.db)
+        polite = api.coach(request, user=self.user)
+        self.assertIn("살펴봐요", polite["coaching"])
+        self.assertEqual(polite["context"]["expression"], {
+            "version": 1, "mbti": "ISTJ", "speech": "polite", "intensity": "gentle", "allow_profanity": False,
+        })
+
+        updated = {**settings, "mbti": "ENFP", "speech": "casual", "intensity": "direct", "allow_profanity": True}
+        save_personalization(account_id, Preferences(**updated), db_path=self.db)
+        direct = api.coach(request, user=self.user)
+        self.assertIn("6시간 20분을 수면으로 분류했어", direct["coaching"])
+        self.assertIn("며칠 동안의 수면 기록과 비교해.", direct["coaching"])
+        self.assertEqual(direct["context"]["presentation"], polite["context"]["presentation"])
+        self.assertEqual(direct["context"]["expression"], {
+            "version": 1, "mbti": "ENFP", "speech": "casual", "intensity": "direct", "allow_profanity": True,
+        })
+
+        save_personalization(account_id, Preferences(**{**updated, "character": "rabbit"}), db_path=self.db)
+        newer = api.coach(request, user=self.user)
+        self.assertEqual(newer["coaching"], direct["coaching"])
+        self.assertEqual(newer["context"], direct["context"])
+
+        history = api.saved_coaching(sid, user=self.user)["history"]
+        self.assertEqual(len(history), 4)
+        self.assertEqual([(item["id"], item["coaching"], item["context"]) for item in history],
+                         [(item["id"], item["coaching"], item["context"]) for item in (newer, direct, polite, starter)])
+        self.assertEqual(api.saved_coaching(sid, user=self.user)["history"], history)
+        self.assertEqual(coaching_service.list_coaching("different-account", sid, self.db), [])
+
+
+    def test_purging_a_reference_keeps_expression_and_saved_text(self):
         sid = self.add_session("2025-11-14", 420)["analysis_id"]
         reference = self.add_session("2025-11-13", 380)["analysis_id"]
         account_id = self.user["id"]
@@ -176,9 +218,13 @@ class CoachingServiceTests(unittest.TestCase):
                 saved, = coaching_service.list_coaching(account_id, sid, path)
                 self.assertEqual(saved["id"], original["id"])
                 self.assertEqual(saved["coaching"], original["coaching"])
-                self.assertIsNone(saved["context"])
+                self.assertEqual(saved["context"], {"expression": original["context"]["expression"]})
 
     def test_sync_background_task_generates_free_coaching_once(self):
+        from account_personalization import Preferences, save_personalization
+
+        prefs = Preferences(mbti=None, speech="casual", intensity="direct", character="dog")
+        save_personalization(self.user["id"], prefs, complete=True, db_path=self.db)
         token = health_sync.pair(
             self.user["id"], "healthkit", "synthetic-source", "synthetic", auto_coach=True, path=self.db
         )["sync_token"]
@@ -204,7 +250,10 @@ class CoachingServiceTests(unittest.TestCase):
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["context"]["engine"], "rules")
         self.assertEqual(saved[0]["context"]["presentation"]["version"], 1)
-        self.assertIn("수면으로 분류한 시간은 8시간", saved[0]["coaching"])
+        self.assertEqual(saved[0]["context"]["expression"]["speech"], "casual")
+        self.assertEqual(saved[0]["context"]["expression"]["intensity"], "direct")
+        self.assertFalse(saved[0]["context"]["expression"]["allow_profanity"])
+        self.assertIn("8시간을 수면으로 분류했어", saved[0]["coaching"])
 
     def test_streamlit_form_uses_the_same_service_and_reads_saved_context(self):
         selected = self.add_session("2025-11-14", 380)

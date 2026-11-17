@@ -10,6 +10,8 @@ from pathlib import Path
 import tomllib
 from uuid import uuid4
 
+from account_personalization import get_personalization
+from coaching_expression import DEFAULT_EXPRESSION, expression_snapshot, render_personalized_answer
 from coaching_free import generate_free_coaching
 from coaching_patterns import _record_day, _timestamp
 from health_records import connect, get_owned_session, list_sessions, overview
@@ -154,7 +156,7 @@ def _rule_history(session, history):
     return recent + [record for end, record in earlier if end > earliest_start]
 
 
-def _rule_answer(result):
+def _rule_pattern_lines(result):
     patterns = result["patterns"]
     lines = []
     for label, period in (("최근 7일", patterns["recent"]), ("직전 7일", patterns["previous"])):
@@ -171,6 +173,10 @@ def _rule_answer(result):
     if spread is not None:
         lines.append(f"기기 기록의 시작 시각 범위 {spread:g}분")
 
+    return lines
+
+
+def _rule_answer(result, lines):
     sections = ["선택 기록\n" + result["observation"]]
     if lines:
         sections.append("수면 패턴\n" + "\n".join(lines))
@@ -224,10 +230,14 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         answer, context = _generate_openai(account_id, session, recent, lifestyle, db_path)
     else:
         recent = _rule_history(session, history)
+        expression = expression_snapshot(get_personalization(account_id, db_path))
         reserve_coaching_request(account_id, db_path)
         result = generate_free_coaching(session, recent, lifestyle, include_presentation=True)
-        answer = _rule_answer(result)
+        pattern_lines = _rule_pattern_lines(result)
+        answer = (_rule_answer(result, pattern_lines) if expression == DEFAULT_EXPRESSION
+                  else render_personalized_answer(result, pattern_lines, expression))
         context = _rule_context(result, session, recent, lifestyle)
+        context["expression"] = expression
 
     referenced = {s["analysis_id"]: s for s in [session] + recent}
     context.update(

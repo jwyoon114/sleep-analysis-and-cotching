@@ -36,7 +36,7 @@ def get_settings(account_id, db_path=None):
         settings = dict(row) if row else dict(bedtime='23:00',wake_time='07:00',timezone='Asia/Seoul',enabled=False,coaching_id=None)
         settings.pop('account_id',None)
         settings['enabled'] = bool(settings['enabled'])
-        return settings | {'desktop_available': desktop_available()}
+        return settings | {'desktop_available': desktop_available(), 'saved': row is not None}
 
 def desktop_available():
     return os.name == 'nt' and os.getenv('SLEEP_DESKTOP_ALARMS','1') == '1'

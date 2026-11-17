@@ -1,13 +1,11 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { ArrowDown, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
-import { renderCoachingBody } from "@/lib/coaching-body";
 import {
-  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter, getCoachingPreset, getCoachingTone,
+  CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter,
   type CharacterId, type MbtiType,
 } from "@/lib/coaching-preview";
-import type { Coaching } from "@/lib/sleep";
 import styles from "./coaching-style-preview.module.css";
 
 type CoachingStyle = {
@@ -25,33 +23,19 @@ function CoachingCharacter({ characterId }: Pick<CoachingStyle, "characterId">) 
   );
 }
 
-export function CoachingAdvice({ body, context, mbti, characterId }: CoachingStyle & {
-  body: string;
-  context?: Coaching["context"];
-}) {
-  const preset = getCoachingPreset(mbti);
+export function CoachingAdvice({body, characterId}: Pick<CoachingStyle, "characterId"> & {body: string}) {
   return (
     <article aria-label="수면 조언">
-      <div className={styles.introduction}>
-        <CoachingCharacter characterId={characterId} />
-        <div>
-          <h3>{preset.label}</h3>
-          <p>{preset.opening}</p>
-        </div>
-      </div>
-      <p className="coach-text">{renderCoachingBody(body, context, getCoachingTone(mbti))}</p>
-      <p className={styles.closing}>{preset.closing}</p>
+      <CoachingCharacter characterId={characterId} />
+      <p className="coach-text">{body}</p>
     </article>
   );
 }
 
-type PreviewProps = CoachingStyle & {
-  onMbtiChange: (mbti: MbtiType | null) => void;
-  onCharacterChange: (characterId: CharacterId) => void;
-};
-
-export default function CoachingStylePreview({ mbti, characterId, onMbtiChange, onCharacterChange }: PreviewProps) {
+export default function CoachingStylePreview({ mbti: initialMbti, characterId: initialCharacter }: CoachingStyle) {
   const id = useId();
+  const [mbti, onMbtiChange] = useState(initialMbti);
+  const [characterId, onCharacterChange] = useState(initialCharacter);
   const preview = createCoachingPreview(mbti);
   const character = getCharacter(characterId);
   const RecommendationList = preview.expression.listStyle === "steps" ? "ol" : "ul";
@@ -64,14 +48,14 @@ export default function CoachingStylePreview({ mbti, characterId, onMbtiChange, 
           <h2 id={id + "-title"}>나에게 편한 말투를 찾아봐요</h2>
           <p>같은 가상 기록, 다른 표현. 함께할 동물도 따로 골라보세요.</p>
         </div>
-        <span className={styles.temporary}>현재 이용 중에만 적용</span>
+        <span className={styles.temporary}>미리보기 전용</span>
       </div>
 
       <div className={styles.layout}>
         <div className={styles.controls}>
           <fieldset className={styles.fieldset} aria-describedby={id + "-hypothesis"}>
             <legend><span className={styles.step}>01</span> MBTI 말투 선택</legend>
-            <p className={styles.hint}>고른 말투는 미리보기와 나의 수면 조언에 함께 적용돼요.</p>
+            <p className={styles.hint}>이곳에서 고른 말투는 가상 조언에 적용돼요.</p>
             <div className={styles.mbtiGrid}>
               {MBTI_TYPES.map(type => (
                 <label key={type} className={styles.mbtiOption}>
@@ -120,8 +104,8 @@ export default function CoachingStylePreview({ mbti, characterId, onMbtiChange, 
           </fieldset>
 
           <p className={styles.sessionNote}>
-            선택은 현재 이용 중에 유지되며, 새로고침하거나 로그아웃하면 초기화돼요.
-            말투와 캐릭터를 바꾸면 화면 표현만 바뀌어요.
+            이곳의 선택은 계정 설정에 저장되지 않아요.
+            계정 설정은 마이페이지에서 변경할 수 있어요.
           </p>
           <a className={styles.previewJump} href={"#" + id + "-preview"}>
             미리보기 조언 보기 <ArrowDown size={14} aria-hidden="true" />

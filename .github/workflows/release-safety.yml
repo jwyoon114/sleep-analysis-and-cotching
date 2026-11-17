@@ -1,0 +1,63 @@
+name: Release safety rehearsal
+
+on:
+  push:
+    branches: [feature/release-candidate, feature/final-release-integration, codex/ui-release-validation]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install PostgreSQL 18 from the official PGDG repository
+        shell: bash
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | grep -q B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+          printf '%s\n' 'Types: deb' 'URIs: https://apt.postgresql.org/pub/repos/apt' 'Suites: noble-pgdg' 'Architectures: amd64' 'Components: main' 'Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' | sudo tee /etc/apt/sources.list.d/daljam-pgdg.sources > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-18
+          /usr/lib/postgresql/18/bin/postgres --version
+          /usr/lib/postgresql/18/bin/postgres --version | grep -E 'PostgreSQL\) 18\.'
+      - name: Rehearse Linux startup, shutdown, restart and recovery
+        shell: bash
+        env:
+          DALJAM_TEST_RELEASE_DOCKER: "1"
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+          COACHING_ENGINE: rules
+          DALJAM_ENV: test
+          SLEEP_DESKTOP_ALARMS: "0"
+          DALJAM_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/daljam-tested-images
+        run: |
+          test "$(docker info --format '{{.OSType}}')" = linux
+          export DALJAM_TEST_POSTGRES_BIN=/usr/lib/postgresql/18/bin
+          test -x "$DALJAM_TEST_POSTGRES_BIN/initdb"
+          test -x "$DALJAM_TEST_POSTGRES_BIN/pg_restore"
+          python3 -m venv "$RUNNER_TEMP/daljam-release"
+          source "$RUNNER_TEMP/daljam-release/bin/activate"
+          python -m pip install -r requirements-server.txt httpx
+          python -B -m unittest discover -s tests -v
+      - name: Frontend behavior checks with Node 24
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo/sleep_frontend node:24-bookworm-slim node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs tests/demo-runtime.test.mjs tests/personalization.test.mjs tests/timeline.test.mjs tests/sleep-stage-breakdown.test.mjs
+      - name: Retain tested candidate and compatible rollback images
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: daljam-tested-images-${{ github.sha }}
+          path: ${{ runner.temp }}/daljam-tested-images/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1

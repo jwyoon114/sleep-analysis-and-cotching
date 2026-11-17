@@ -21,7 +21,7 @@ services:
       - key: DALJAM_PUBLIC_ORIGIN
         value: https://daljam.onrender.com
       - key: DALJAM_BACKUP_POLICY
-        value: render-pitr-7d-v1
+        value: render-pitr-3d-v1
       - key: SLEEP_DB_BACKEND
         value: postgresql
       - key: COACHING_ENGINE

@@ -7,13 +7,13 @@ export const MBTI_TYPES = Object.freeze([
 ] as const);
 
 export type MbtiType = typeof MBTI_TYPES[number];
-export type CharacterId = "cat" | "rabbit" | "bear" | "owl";
+export type CharacterId = "cat" | "raccoon" | "dog" | "rabbit";
 
 export const CHARACTERS = Object.freeze([
   Object.freeze({ id: "cat", name: "고양이", emoji: "🐱" }),
+  Object.freeze({ id: "raccoon", name: "너구리", emoji: "🦝" }),
+  Object.freeze({ id: "dog", name: "강아지", emoji: "🐶" }),
   Object.freeze({ id: "rabbit", name: "토끼", emoji: "🐰" }),
-  Object.freeze({ id: "bear", name: "곰", emoji: "🐻" }),
-  Object.freeze({ id: "owl", name: "부엉이", emoji: "🦉" }),
 ] as const);
 
 type Preset = Readonly<{ label: string; opening: string; closing: string }>;
