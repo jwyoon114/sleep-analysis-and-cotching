@@ -78,8 +78,6 @@
 .onboarding-footer {margin-top:auto;padding:10px clamp(16px,5.6vw,31px) 12px;}
 .onboarding-actions {display:grid;grid-template-columns:1fr 1.3fr;gap:10px;}
 .onboarding-card .onboarding-logout {color:var(--preference-muted);margin:3px auto 0;min-height:44px;display:flex;width:fit-content;}
-body:has(> .onboarding-screen) > :is(.pwa-help-button,.app-install-actions) {display:none;}
-
 @media (min-width:761px) {
   .personalization-screen.onboarding-screen {padding:24px 0;}
   .onboarding-screen .onboarding-card {

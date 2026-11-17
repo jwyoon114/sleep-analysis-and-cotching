@@ -15,5 +15,5 @@ export const metadata: Metadata = {
 export const viewport:Viewport={width:"device-width",initialScale:1,viewportFit:"cover",themeColor:"#7861ac"};
 
 export default function RootLayout({ children }: Readonly<{children: React.ReactNode}>) {
-  return <html lang="ko"><body>{children}<PwaInstall/></body></html>;
+  return <html lang="ko"><body><PwaInstall>{children}</PwaInstall></body></html>;
 }
