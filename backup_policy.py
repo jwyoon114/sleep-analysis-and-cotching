@@ -23,11 +23,14 @@ def managed_backups(db_path=None):
 def maintain_backups(db_path=None, now=None):
     from app_database import uses_postgres
     if uses_postgres(db_path):
-        from production_policy import backup_policy_ready
+        from production_policy import backup_policy_ready, PITR_RETENTION_DAYS, MANAGED_EXPORT_RETENTION_DAYS
         if backup_policy_ready():
-            return {"status": "managed_pitr", "backup_count": None, "retention_days": 7,
+            return {"status": "managed_pitr", "backup_count": None,
+                    "retention_days": MANAGED_EXPORT_RETENTION_DAYS,
+                    "pitr_retention_days": PITR_RETENTION_DAYS,
+                    "managed_export_retention_days": MANAGED_EXPORT_RETENTION_DAYS,
                     "pending": False, "permanent_deletion_available": True,
-                    "message": "운영 DB에서 삭제된 자료는 복구용 백업에서 최대 7일 후 만료됩니다. 수동 백업은 생성하지 않습니다."}
+                    "message": "운영 DB의 시점복구 기간은 3일이며 Render 논리 백업은 생성 후 7일간 보관됩니다. 다운로드한 검증용 복사본은 운영자가 별도로 관리·폐기하며, 복원 시 삭제 요청을 재반영해야 합니다. 앱에서 수동 백업을 생성하지 않습니다."}
         return {"status": "cloud_policy_pending", "backup_count": None,
                 "retention_days": None, "pending": True,
                 "permanent_deletion_available": False,
