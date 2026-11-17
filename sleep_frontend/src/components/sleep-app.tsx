@@ -107,7 +107,7 @@ export default function SleepApp() {
   const coachingRecordId=page==="dashboard" ? latest?.analysis_id : selected;
   const healthSynced=useCallback(()=>setRevision(n=>n+1),[]);
   const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUpload(false);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
-  useEffect(()=>{if(new URLSearchParams(window.location.search).get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
+  useEffect(()=>{const query=new URLSearchParams(window.location.search);if(query.get("tab")==="plan")setPage("plan");if(query.get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
   useEffect(()=>{
     if(!accountId||demo)return;
     const controller=new AbortController();
