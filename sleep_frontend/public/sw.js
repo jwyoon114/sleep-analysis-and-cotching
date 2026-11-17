@@ -17,19 +17,21 @@ self.addEventListener("fetch",event=>{
 });
 
 const BEDTIME_TEST_TAG="daljam-bedtime-test";
+const BEDTIME_REMINDER_TAG="daljam-bedtime-reminder";
 self.addEventListener("push",event=>{
   let payload;
   try{payload=event.data?.json();}catch{return;}
-  if(payload?.kind!=="bedtime-test")return;
-  event.waitUntil(self.registration.showNotification("달잠 테스트 알림",{
-    body:"달잠의 테스트 알림이에요. 누르면 계획 화면을 열어요.",
+  const isTest=payload?.kind==="bedtime-test";
+  if(!isTest&&payload?.kind!=="bedtime-reminder")return;
+  event.waitUntil(self.registration.showNotification(isTest?"달잠 테스트 알림":"달잠 취침 준비",{
+    body:isTest?"달잠의 테스트 알림이에요. 누르면 계획 화면을 열어요.":"이제 잠들 준비를 해 볼까요? 누르면 계획 화면을 열어요.",
     icon:"/icons/app-192.png",
-    tag:BEDTIME_TEST_TAG,
+    tag:isTest?BEDTIME_TEST_TAG:BEDTIME_REMINDER_TAG,
   }));
 });
 
 self.addEventListener("notificationclick",event=>{
-  if(event.notification.tag!==BEDTIME_TEST_TAG)return;
+  if(![BEDTIME_TEST_TAG,BEDTIME_REMINDER_TAG].includes(event.notification.tag))return;
   event.notification.close();
   event.waitUntil((async()=>{
     const target=new URL("/?tab=plan",self.location.origin).href;
