@@ -36,6 +36,7 @@ body:has(dialog:is(.classic-dialog,.preference-dialog)[open]) {overflow:hidden;}
   min-height:0;
   overflow:auto;
   overscroll-behavior:contain;
+  scroll-padding-block:12px;
   padding:18px 22px 22px;
 }
 .classic-dialog-actions {display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:16px;}
@@ -46,8 +47,10 @@ body:has(dialog:is(.classic-dialog,.preference-dialog)[open]) {overflow:hidden;}
 .classic-dialog.health-dialog .health-connect h2 {font-size:16px;}
 .classic-dialog :is(.soft-info,.soft-warning) {font-size:13px;line-height:1.6;}
 .classic-dialog.pwa-dialog {max-height:calc(100dvh - 48px);overflow:hidden;}
-.classic-dialog.pwa-dialog h2 {margin:0;}
-.classic-dialog.pwa-dialog section {margin:0 0 12px;}
+.pwa-dialog section {margin-bottom:16px;padding:14px;border:1px solid var(--classic-line);border-radius:14px;background:var(--classic-paper);}
+.pwa-dialog h3 {font-size:16px;}
+.pwa-dialog p {margin:8px 0;color:var(--classic-muted);line-height:1.6;font-size:14px;word-break:keep-all;}
+.pwa-dialog .app-download-button {width:fit-content;margin-top:5px;text-decoration:none;}
 .classic-dialog .button {white-space:normal;}
 .preference-dialog {padding:22px;overflow:auto;}
 .preference-dialog h2 {font-size:21px;line-height:1.33;}
@@ -58,15 +61,15 @@ body:has(dialog:is(.classic-dialog,.preference-dialog)[open]) {overflow:hidden;}
 
 @media (max-width:760px) {
   .classic-dialog,.classic-dialog.pwa-dialog,.preference-dialog {
-    inset:auto 0 0;
+    inset:auto 0 var(--keyboard-inset,0px);
     margin:0 auto;
     width:min(550px,100%);
-    max-height:calc(100dvh - max(18px,env(safe-area-inset-top)));
+    max-height:calc(100dvh - max(18px,env(safe-area-inset-top)) - var(--keyboard-inset,0px));
     border-radius:22px 22px 0 0;
   }
   .classic-dialog-wide {
     width:100%;
-    height:calc(100dvh - env(safe-area-inset-top));
+    height:calc(100dvh - env(safe-area-inset-top) - var(--keyboard-inset,0px));
     max-height:none;
     border-radius:0;
   }
@@ -76,6 +79,7 @@ body:has(dialog:is(.classic-dialog,.preference-dialog)[open]) {overflow:hidden;}
   .classic-dialog-content {
     padding:15px max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
   }
+  .classic-dialog-actions > .button {flex:1;}
   .preference-dialog {padding-bottom:max(20px,env(safe-area-inset-bottom));}
 }
 
