@@ -4,6 +4,7 @@ import {useEffect,useRef,useState} from "react";
 import {ArrowDown,ArrowUp,Bell,CalendarDays,Moon,Plus,Sparkles,Sun,Trash2,X} from "lucide-react";
 import {api,minutes,type Coaching} from "@/lib/sleep";
 import SleepAlarms,{saveSleepSchedule,type Schedule} from "./sleep-alarms";
+import WebPushSettings from "./web-push-settings";
 
 type Activity={id:string;title:string;completed:boolean};
 type Plan={date:string;timezone:string;activities:Activity[]};
@@ -217,7 +218,9 @@ export default function SleepPlan({active,demo,coaching}:{active:boolean;demo:bo
               <small>최근 {recommendation.lookback_days}일 유효 기록 {recommendation.valid_nights}일 · 최소 {recommendation.minimum_nights}일 필요</small>
             </div>
           </section>
-          <section className="panel"><h2><Bell size={19}/> 취침 준비 알림</h2><p>취침 30분 전 휴대폰 알림은 아직 지원되지 않아요.</p>
+          <section className="panel"><h2><Bell size={19}/> 취침 준비 알림</h2>
+            <p>취침 30분 전 정기 알림은 검증 대기 중이에요.</p>
+            {active&&<WebPushSettings/>}
             {schedule.saved&&schedule.desktop_available&&<p className="muted">Windows PC 알람 {schedule.enabled?"켜짐":"꺼짐"}</p>}
           </section>
           <section className="panel">

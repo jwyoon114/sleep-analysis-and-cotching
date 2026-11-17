@@ -3,4 +3,5 @@ uvicorn==0.54.0
 python-multipart==0.0.33
 openai==3.42.1
 tzdata==2026.6
+pywebpush==2.5.0
 -r requirements-postgres.txt

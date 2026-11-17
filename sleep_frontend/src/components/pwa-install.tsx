@@ -78,9 +78,10 @@ export default function PwaInstall({children}: {children: ReactNode}) {
       {showApple && <section aria-labelledby="iphone-install-title">
         <h3 id="iphone-install-title">iPhone · iPad</h3>
         {!device?.standalone && <p>Safari에서 달잠을 열고 공유 메뉴 → <strong>홈 화면에 추가</strong>를 선택하세요. ‘웹 앱으로 열기’가 표시되면 켠 뒤 추가하세요.</p>}
+        <p>알림을 확인하려면 iOS·iPadOS 16.4 이상에서 홈 화면의 달잠 아이콘으로 앱을 열고 계획 탭으로 이동하세요.</p>
         <p>Apple 건강 기록은 지원하는 수면 JSON으로 내보낸 뒤 달잠의 <strong>수면 기록 추가</strong>에서 가져오세요. 홈 화면 웹앱에서는 HealthKit 직접 자동 연결을 지원하지 않아요.</p>
       </section>}
-      <p>웹앱과 수면 동기화에는 인터넷 연결이 필요해요. 휴대폰 푸시 알림은 현재 지원하지 않아요.</p>
+      <p>웹앱과 수면 동기화에는 인터넷 연결이 필요해요. 웹 푸시의 사용 가능 여부는 계획 탭에서 확인하세요.</p>
       <button type="button" className="button secondary full" onClick={() => setOpen(false)}>확인했어요</button>
     </dialog>
   </InstallHelp.Provider>;

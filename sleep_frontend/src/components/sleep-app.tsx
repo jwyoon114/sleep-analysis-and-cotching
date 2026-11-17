@@ -146,7 +146,7 @@ export default function SleepApp() {
     return()=>window.removeEventListener("daljam-native-ready",update);
   },[]);
   const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setRecordsStatus("loading");setNativeHealth(null);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
-  useEffect(()=>{if(new URLSearchParams(window.location.search).get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
+  useEffect(()=>{const query=new URLSearchParams(window.location.search);if(query.get("tab")==="plan")setPage("plan");if(query.get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
   useEffect(()=>{
     if(!accountId||demo)return;
     const controller=new AbortController();
