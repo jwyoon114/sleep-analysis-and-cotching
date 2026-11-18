@@ -4,6 +4,7 @@ import "./globals.css";
 import "./mobile-ui.css";
 import "./personalization.css";
 import "./sleep-plan.css";
+import "./iphone-sleep-guide.css";
 
 export const metadata: Metadata = {
   title: "달잠 · 나의 수면 리포트",

@@ -1,12 +1,13 @@
-import {Bell, ChevronRight, HeartPulse, Info, LogOut, Moon, Settings2, Trash2} from "lucide-react";
+import {Bell, ChevronRight, HeartPulse, Images, Info, LogOut, Moon, Settings2, Trash2} from "lucide-react";
 
 import {useRef, type ReactNode} from "react";
 import {InstallHelpButton} from "./pwa-install";
 
-export default function MobileProfile({username, preferences, onAccount, onPlan, onTrash, onUpload, onLogout, demo, busy, health}: {
+export default function MobileProfile({username, preferences, onAccount, onPlan, onTrash, onUpload, onIphoneGuide, onLogout, demo, busy, health}: {
   username:string; preferences:ReactNode;
 
   onAccount:()=>void; onPlan:()=>void; onTrash:()=>void; onUpload:()=>void; onLogout:()=>void;
+  onIphoneGuide?:()=>void;
   demo:boolean; busy:boolean; health?:ReactNode;
 }) {
   const galaxyHealth=useRef<HTMLDivElement>(null);
@@ -30,7 +31,12 @@ export default function MobileProfile({username, preferences, onAccount, onPlan,
       <div ref={galaxyHealth} id="galaxy-health" role="region" aria-label="Galaxy 건강 데이터 연결" tabIndex={-1}>{health??<p className="muted">갤럭시 테스트 앱에 로그인하면 Health Connect를 연결할 수 있어요.</p>}</div>
     </section>
     <button type="button" className="profile-link panel" onClick={onTrash}><Trash2 size={21}/><span><strong>내 데이터 관리</strong><small>휴지통과 복원</small></span><ChevronRight size={19}/></button>
-    <section className="panel profile-info"><h2><Info size={21}/>앱 정보 및 도움말</h2><a href="/privacy">개인정보 처리 안내</a><a href="/health-privacy">건강 데이터 사용 안내</a><InstallHelpButton/></section>
+    <section className="panel profile-info"><h2><Info size={21}/>앱 정보 및 도움말</h2><a href="/privacy">개인정보 처리 안내</a><a href="/health-privacy">건강 데이터 사용 안내</a><InstallHelpButton/>
+      {onIphoneGuide&&<button type="button" className="text-button install-help-button iphone-guide-entry" aria-haspopup="dialog" onClick={event=>{
+        event.currentTarget.focus({preventScroll:true});
+        onIphoneGuide();
+      }}><Images size={16} aria-hidden="true"/> iPhone 수면 기록 사진 안내</button>}
+    </section>
     <button type="button" className="button secondary" disabled={busy} onClick={onLogout}><LogOut size={17}/>{demo?"체험 종료":"로그아웃"}</button>
   </div>;
 }
