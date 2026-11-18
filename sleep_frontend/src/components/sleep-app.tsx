@@ -10,6 +10,7 @@ import {installPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
 import SleepDashboard from "./sleep-dashboard";
+import {homeSummary} from "@/lib/home-summary";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
 import MobileProfile from "./mobile-profile";
@@ -29,7 +30,7 @@ type Confirmation = {title:string; description:string; permanent?:boolean; run:(
 type CoachingHistory = {recordId:string; status:"loading"|"ready"|"error"; items:Coaching[]};
 type CoachingRequestState = {recordId:string; kind:"submitting"} | {recordId:string; kind:"error"; status:number|null};
 const titles: Record<Page,[string,string]> = {
-  dashboard:["나의 밤을 돌아보는 시간.","작은 기록이 모여, 더 편안한 내일이 됩니다."],
+  dashboard:["최근 수면 요약",""],
   records:["기록","나의 수면 기록과 변화를 살펴보세요."],
   recordDetail:["기록 상세보기",""], coaching:["AI 코칭",""], comparison:["기간별 비교",""],
   plan:["계획","내일은 더 개운하게."], account:["마이페이지","나만의 달잠을 설정해 보세요."],
@@ -320,11 +321,12 @@ export default function SleepApp() {
   const activeTab:MainTab = page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
   const backTo:Page|null = page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
+  const summary=homeSummary(latest,loading);
   return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page} data-keyboard-open={keyboardOpen||undefined}>
     <MainNavigation active={activeTab} onNavigate={navigate}/>
     <main ref={main} className="mobile-content">
     {backTo&&<button type="button" className="dashboard-link page-back" onClick={()=>navigate(backTo)}><ArrowLeft size={19}/>{backTo==="records"?"기록 목록":backTo==="recordDetail"?"기록 상세":backTo==="account"?"마이":"홈"}</button>}
-    <PageHero title={titles[page][0]} description={titles[page][1]} illustrated={illustrated} moon={CHARACTER_THEMES[characterId].moon}>
+    <PageHero title={page==="dashboard"?summary.title:titles[page][0]} description={page==="dashboard"?summary.description:titles[page][1]} illustrated={illustrated} moon={CHARACTER_THEMES[characterId].moon}>
       {page==="records"&&<button type="button" className="button secondary hero-upload" onClick={openUpload} disabled={busy}><Plus size={17}/>가져오기</button>}
     </PageHero>
     {demo&&<div className="demo-banner"><Sparkles size={16}/><span>지금은 가상의 기록을 보고 있어요. 실제 수면 분석이나 AI 생성 결과가 아닙니다.</span><button onClick={()=>{reset();window.history.replaceState(null,"",window.location.pathname);}}>내 기록으로 시작하기<ArrowRight size={14}/></button></div>}

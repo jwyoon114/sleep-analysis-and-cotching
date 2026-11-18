@@ -340,6 +340,19 @@
   .mobile-app .panel {padding:20px;}
   .mobile-app .dashboard-duration {min-width:146px;}
 }
+
+/* Home gives measured results priority over decorative artwork. */
+.mobile-app[data-screen="dashboard"] .mobile-hero.illustrated {
+  min-height:0;padding:8px 2px 20px;gap:16px;
+}
+.mobile-app[data-screen="dashboard"] .mobile-hero.illustrated::before {display:none;}
+.mobile-app[data-screen="dashboard"] .hero-heading > div {max-width:100%;}
+.mobile-app[data-screen="dashboard"] .hero-heading h1 {
+  max-width:26ch;font-size:clamp(24px,6.1vw,30px);line-height:1.35;text-wrap:balance;
+}
+.mobile-app[data-screen="dashboard"] .hero-heading p {max-width:42ch;margin-top:8px;}
+.mobile-app .dashboard-next-step .dashboard-link {width:100%;justify-content:flex-start;padding:12px 2px;}
+.mobile-app .dashboard-next-step .dashboard-link > svg:last-child {margin-left:auto;}
 .page-heading.dashboard-page-heading { align-items: center; margin-bottom: 18px; }
 .dashboard-page-heading h1 { color: #28233f; }
 .dashboard-page-heading > .button { min-height: 44px; margin-top: 0; font-size: 13px; }
