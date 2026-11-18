@@ -2,17 +2,17 @@
 [data-daljam-theme="cat"] {
   --theme-art:url("/daljam-cat-night.webp");
 }
-[data-daljam-theme="raccoon"],body:has(> .mobile-app[data-daljam-theme="raccoon"]) {
+[data-daljam-theme="raccoon"],html:has(.mobile-app[data-daljam-theme="raccoon"]) {
   --theme-art:url("/themes/raccoon-night.webp");
   --theme-page:#051c24;--theme-glow:#104354;--theme-card:#0d2e38;
   --theme-line:#32636d;--theme-accent:#a0e8d8;--theme-active:#1a5260;
 }
-[data-daljam-theme="dog"],body:has(> .mobile-app[data-daljam-theme="dog"]) {
+[data-daljam-theme="dog"],html:has(.mobile-app[data-daljam-theme="dog"]) {
   --theme-art:url("/themes/dog-night.webp");
   --theme-page:#21161e;--theme-glow:#633c2c;--theme-card:#36252d;
   --theme-line:#805b4d;--theme-accent:#ffcf96;--theme-active:#5d3b36;
 }
-[data-daljam-theme="rabbit"],body:has(> .mobile-app[data-daljam-theme="rabbit"]) {
+[data-daljam-theme="rabbit"],html:has(.mobile-app[data-daljam-theme="rabbit"]) {
   --theme-art:url("/themes/rabbit-night.webp");
   --theme-page:#24152e;--theme-glow:#5b3158;--theme-card:#3c2445;
   --theme-line:#7e527e;--theme-accent:#ffc4e6;--theme-active:#653662;

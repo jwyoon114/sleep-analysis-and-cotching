@@ -29,11 +29,13 @@ export default function SleepTimeline({record,compact=false,interactive=true}:{r
   const drawing=useMemo(()=>{
   if(!model||!model.segments.length)return null;
   const {start,end,duration,segments,gaps}=model;
+  const noClassifiedSleep=segments.every(s=>s.stage==="unspecified"||s.stage==="wake");
   const stages:Stage[]=["wake","rem","core","deep",...(segments.some(s=>s.stage==="unspecified")?["unspecified" as const]:[])];
-  const top=compact?21:25,row=compact?34:39;
-  const bottom=top+(stages.length-1)*row+19,height=bottom+53;
+  const visibleStages=!interactive&&noClassifiedSleep ? stages.filter(stage=>segments.some(s=>s.stage===stage)) : stages;
+  const top=compact?21:25,row=!interactive?28:compact?34:39;
+  const bottom=top+(visibleStages.length-1)*row+19,height=bottom+(interactive?53:32);
   const x=(t:number)=>LEFT+(t-start)/duration*(width-LEFT-RIGHT);
-  const y=(stage:Stage)=>top+stages.indexOf(stage)*row;
+  const y=(stage:Stage)=>top+visibleStages.indexOf(stage)*row;
   const number=(n:number)=>Number(n.toFixed(2));
   const paths=Object.fromEntries(stages.map(stage=>[stage,segments.filter(s=>s.stage===stage).map(s=>`M${number(x(s.from))},${y(stage)-7}h${number(x(s.to)-x(s.from))}v14H${number(x(s.from))}Z`).join("")])) as Record<Stage,string>;
   const connectors=segments.slice(1).map((s,i)=>segments[i].to===s.from&&segments[i].stage!==s.stage?`M${number(x(s.from))},${y(segments[i].stage)}V${y(s.stage)}`:"").join("");
@@ -43,12 +45,12 @@ export default function SleepTimeline({record,compact=false,interactive=true}:{r
   const ticks:number[]=[];
   for(let tick=Math.ceil(start/step)*step;tick<end;tick+=step){
     const position=x(tick);
-    if(position<=LEFT+34||position>=width-RIGHT-34)continue;
+    if(interactive&&(position<=LEFT+34||position>=width-RIGHT-34))continue;
     const previous=ticks.at(-1);
     if(!compact||previous===undefined||position-x(previous)>=46)ticks.push(tick);
   }
-  return {start,end,duration,segments,gaps,stages,top,bottom,height,x,y,paths,connectors,gapPath,ticks};
-  },[model,width,compact]);
+  return {start,end,duration,segments,gaps,stages:visibleStages,top,bottom,height,x,y,paths,connectors,gapPath,ticks};
+  },[model,width,compact,interactive]);
   if(!drawing)return <p className={compact?"dashboard-state":"muted"}>시간별 수면 구간 기록이 부족해 그래프를 표시할 수 없어요.</p>;
   const {start,duration,segments,gaps,stages,top,bottom,height,x,y,paths,connectors,gapPath,ticks}=drawing;
   const formatTime=(value:number)=>new Intl.DateTimeFormat("ko-KR",{timeZone:record.timezone,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(value);
@@ -73,8 +75,8 @@ export default function SleepTimeline({record,compact=false,interactive=true}:{r
         {stages.map(stage=><path key={stage} d={paths[stage]} fill={colors[stage]} opacity={stage==="wake"?.95:.9}/>)}
         {selected&&<g className="timeline-highlight" pointerEvents="none"><line x1={x((selected.from+selected.to)/2)} x2={x((selected.from+selected.to)/2)} y1={top-17} y2={bottom} stroke="#9e82ba" strokeDasharray="2 3"/><rect x={x(selected.from)} y={y(selected.stage)-9} width={Math.max(1,x(selected.to)-x(selected.from))} height={18} rx="2" fill="none" stroke="#70518d" strokeWidth="1.5"/></g>}
         <line x1={LEFT} x2={width-RIGHT} y1={bottom} y2={bottom} stroke="#e9e2f0"/>
-        <text x={LEFT} y={bottom+40} className="timeline-endpoint">{record.start.slice(5,10).replace("-",".")} {clock(record.start)}</text>
-        <text x={width-RIGHT} y={bottom+40} textAnchor="end" className="timeline-endpoint">{record.end.slice(5,10).replace("-",".")} {clock(record.end)}</text>
+        {interactive&&<><text x={LEFT} y={bottom+40} className="timeline-endpoint">{record.start.slice(5,10).replace("-",".")} {clock(record.start)}</text>
+        <text x={width-RIGHT} y={bottom+40} textAnchor="end" className="timeline-endpoint">{record.end.slice(5,10).replace("-",".")} {clock(record.end)}</text></>}
       </svg>
     </div>
     {!compact&&<div className="timeline-mobile-hint"><MoveHorizontal size={13}/>그래프를 좌우로 움직여 시간대를 살펴보세요.</div>}
@@ -88,6 +90,6 @@ export default function SleepTimeline({record,compact=false,interactive=true}:{r
       : <><span className="timeline-stage-badge">미기록 구간</span><span>이 시간대에는 단계 기록이 없습니다.</span></>}</div>
     <div className="timeline-controls"><button className="icon-button" aria-label="이전 수면 구간" disabled={active<=0} onClick={()=>setActive(n=>n-1)}><ChevronLeft size={17}/></button><input type="range" min={0} max={segments.length-1} value={Math.max(0,active)} aria-label="수면 구간 선택" aria-valuetext={selected?`${labels[selected.stage]} ${clock(selected.start)}부터 ${clock(selected.end)}까지`:"미기록 구간"} onChange={e=>setActive(Number(e.target.value))}/><button className="icon-button" aria-label="다음 수면 구간" disabled={active>=segments.length-1} onClick={()=>setActive(n=>n+1)}><ChevronRight size={17}/></button></div>
     </>}
-    <p className="timeline-note">{compact?"수면 단계는 기기의 추정값이에요.":"그래프를 가리키거나 누르면 해당 구간이 표시됩니다."}{gaps.length>0?" 빗금은 미기록 구간입니다.":""}{!compact&&" 수면 단계는 웨어러블 기기의 추정값입니다."}{noClassifiedSleep&&" 이 기록에는 세부 수면 단계 분류가 없어요."}</p>
+    <p className="timeline-note">{noClassifiedSleep&&!interactive?"이 기록에는 세부 수면 단계가 없어요.":compact?"수면 단계는 기기의 추정값이에요.":"그래프를 가리키거나 누르면 해당 구간이 표시됩니다."}{gaps.length>0?" 빗금은 미기록 구간입니다.":""}{!compact&&" 수면 단계는 웨어러블 기기의 추정값입니다."}{noClassifiedSleep&&interactive&&" 이 기록에는 세부 수면 단계 분류가 없어요."}</p>
   </section>;
 }

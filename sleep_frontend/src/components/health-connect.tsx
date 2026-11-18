@@ -4,17 +4,29 @@ import {api,type User} from '@/lib/sleep';
 
 type Source={id:string;name:string};
 type NativeStatus={available:boolean;connected:boolean;provider:string;accountId?:string;lastSyncedAt?:string;background?:boolean;error?:string};
+export type AndroidConnection = "checking" | "connected" | "disconnected" | "unavailable" | "error";
 type Native={platform:'android'|'ios';request:<T>(method:string,payload?:unknown)=>Promise<T>};
 declare global {interface Window {DaljamNative?:Native}}
 export async function stopNativeHealth(){if(window.DaljamNative)await window.DaljamNative.request('disconnect');}
 
-export default function HealthConnect({user,onSynced}:{user:User;onSynced:()=>void}){
+export default function HealthConnect({user,onSynced,onAndroidStatus}:{user:User;onSynced:()=>void;onAndroidStatus:(status:AndroidConnection)=>void}){
   const adviceTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const [remote,setRemote]=useState<{connected:boolean;connection?:{source_name:string;last_synced_at:string;advice_status?:string}}>();
   useEffect(()=>{api<typeof remote>('watch/health/connection').then(setRemote).catch(()=>{});return()=>{if(adviceTimer.current)clearTimeout(adviceTimer.current);};},[user.id]);
   const [native,setNative]=useState<Native>(),[state,setState]=useState<NativeStatus>(),[sources,setSources]=useState<Source[]>([]),[source,setSource]=useState('');
   const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[autoCoach,setAutoCoach]=useState(false);
-  const read=useCallback(async(n:Native)=>{const s=await n.request<NativeStatus>('status');if(s.connected&&s.accountId!==user.id){await n.request('disconnect');s.connected=false;}setState(s);return s;},[user.id]);
+  const read=useCallback(async(n:Native)=>{
+    try{
+      const s=await n.request<NativeStatus>('status');
+      if(s.connected&&s.accountId!==user.id){await n.request('disconnect');s.connected=false;}
+      setState(s);
+      if(n.platform==='android')onAndroidStatus(!s.available?'unavailable':s.connected?'connected':s.error?'error':'disconnected');
+      return s;
+    }catch(error){
+      if(n.platform==='android')onAndroidStatus('error');
+      throw error;
+    }
+  },[user.id,onAndroidStatus]);
   const sync=useCallback(async(n:Native)=>{setBusy(true);setError('');try{
     const r=await n.request<{added_sessions:number;updated_sessions:number;ignored_incomplete:number;advice_queued:boolean;analysis_ids:string[]}>('sync');
     setMessage(r.ignored_incomplete?'동기화했어요. 수면 단계가 없는 일부 기록은 분석에서 제외했어요.':r.added_sessions||r.updated_sessions?'새 수면 기록을 가져와 분석했어요.':'최신 수면 기록을 확인했어요. 새 기록이 없다면 건강앱의 수면 기록과 접근 권한을 확인해 주세요.');
