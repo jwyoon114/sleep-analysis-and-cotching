@@ -6,12 +6,16 @@ import {api, ApiError, clock, colors, compare, daily, labels, minutes, shortDate
 import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
 import {coachingDataNotes} from "@/lib/coaching-body";
+import {installPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
 import SleepDashboard from "./sleep-dashboard";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
 import MobileProfile from "./mobile-profile";
+import IphoneSleepGuide from "./iphone-sleep-guide";
+import {InstallHelpButton} from "./pwa-install";
+import {useMobileKeyboard} from "./use-mobile-keyboard";
 import {Onboarding, ProfilePreferences} from "./personalization";
 import {MbtiWheel} from "./personalization-fields";
 import {CHARACTER_THEMES, type Personalization, type Preferences} from "@/lib/personalization";
@@ -76,10 +80,11 @@ function Auth({onLogin,onDemo,error:connectionError,status}:{onLogin:(u:User)=>v
       const result=await api<{user:User}>("auth/login","POST",{username,password});onLogin(result.user);
     } catch(err) {setError(err instanceof Error?err.message:"로그인을 확인해 주세요.");}finally{setBusy(false);}
   }
-  return <main className="auth-page"><section className="auth-story"><Mark/><div className="auth-copy"><Tag>BETTER NIGHTS, BRIGHTER DAYS</Tag><h1>오늘 밤의 기록이,<br/>내일의 나를<br/><em>더 편안하게.</em></h1><p>나의 수면을 이해하는 가장 다정한 방법.<br/>기록부터 나에게 맞는 작은 습관까지, 달잠과 함께해요.</p></div><div className="night-art" aria-hidden="true"><div className="moon-glow"/><div className="art-moon"/><i className="star s1">✧</i><i className="star s2">✦</i><i className="star s3">✧</i><div className="hill hill1"/><div className="hill hill2"/><div className="hill hill3"/><div className="art-caption"><Moon size={15}/> A LITTLE CLOSER TO A RESTFUL NIGHT</div></div><div className="auth-trust"><ShieldCheck size={17}/>기록은 계정별로 안전하게 분리됩니다.</div></section><section className="auth-form-side"><div className="auth-mobile-brand"><Mark/></div><div className="auth-form-card"><div className="eyebrow"><span/>YOUR PERSONAL SLEEP JOURNAL</div><h2>{register?"나만의 수면 여정 시작하기":"반가워요, 잘 쉬셨나요?"}</h2><p>{register?"계정을 만들고 나의 밤을 기록해 보세요.":"로그인하고 나의 밤 이야기를 이어가세요."}</p>{status&&<div className="auth-success" role="status"><Check size={15}/>{status}</div>}<div className="auth-tabs"><button className={!register?"active":""} onClick={()=>{setRegister(false);setError("");}}>로그인</button><button className={register?"active":""} onClick={()=>{setRegister(true);setError("");}}>회원가입</button></div><form onSubmit={submit} key={String(register)}><label>아이디<input name="username" autoComplete="username" required minLength={3} maxLength={40} placeholder="아이디를 입력해 주세요"/></label><label>비밀번호<input name="password" type="password" autoComplete={register?"new-password":"current-password"} required minLength={register?10:1} maxLength={128} placeholder={register?"10자 이상의 비밀번호":"비밀번호를 입력해 주세요"}/></label>{register&&<label>비밀번호 확인<input name="confirmation" type="password" autoComplete="new-password" required minLength={10} maxLength={128} placeholder="한 번 더 입력해 주세요"/></label>}{register&&<RegistrationConsent/>}{(error||connectionError)&&<div className="error" role="alert">{error||connectionError}</div>}<button className="button primary auth-submit" disabled={busy}>{busy?<Busy text="확인 중"/>:register?"계정 만들고 시작하기":"나의 수면 리포트 열기"}<ArrowRight size={18}/></button></form><div className="auth-divider"><span>달잠이 처음이라면</span></div><button className="button demo-button" onClick={onDemo}><Sparkles size={17}/>가상 기록으로 먼저 둘러보기<ArrowUpRight size={16}/></button><p className="auth-footnote">체험 모드에는 실제 건강 정보가 포함되지 않습니다.<br/>웨어러블 기록은 의학적 진단을 대신하지 않아요.</p></div><span className="auth-bottom">조금 더 나은 밤, 조금 더 가벼운 아침.</span></section></main>;
+  return <main className="auth-page"><section className="auth-story"><Mark/><div className="auth-copy"><Tag>BETTER NIGHTS, BRIGHTER DAYS</Tag><h1>오늘 밤의 기록이,<br/>내일의 나를<br/><em>더 편안하게.</em></h1><p>나의 수면을 이해하는 가장 다정한 방법.<br/>기록부터 나에게 맞는 작은 습관까지, 달잠과 함께해요.</p></div><div className="night-art" aria-hidden="true"><div className="moon-glow"/><div className="art-moon"/><i className="star s1">✧</i><i className="star s2">✦</i><i className="star s3">✧</i><div className="hill hill1"/><div className="hill hill2"/><div className="hill hill3"/><div className="art-caption"><Moon size={15}/> A LITTLE CLOSER TO A RESTFUL NIGHT</div></div><div className="auth-trust"><ShieldCheck size={17}/>기록은 계정별로 안전하게 분리됩니다.</div></section><section className="auth-form-side"><div className="auth-mobile-brand"><Mark/></div><div className="auth-form-card"><div className="eyebrow"><span/>YOUR PERSONAL SLEEP JOURNAL</div><h2>{register?"나만의 수면 여정 시작하기":"반가워요, 잘 쉬셨나요?"}</h2><p>{register?"계정을 만들고 나의 밤을 기록해 보세요.":"로그인하고 나의 밤 이야기를 이어가세요."}</p>{status&&<div className="auth-success" role="status"><Check size={15}/>{status}</div>}<div className="auth-tabs"><button className={!register?"active":""} onClick={()=>{setRegister(false);setError("");}}>로그인</button><button className={register?"active":""} onClick={()=>{setRegister(true);setError("");}}>회원가입</button></div><form onSubmit={submit} key={String(register)}><label>아이디<input name="username" autoComplete="username" required minLength={3} maxLength={40} placeholder="아이디를 입력해 주세요"/></label><label>비밀번호<input name="password" type="password" autoComplete={register?"new-password":"current-password"} required minLength={register?10:1} maxLength={128} placeholder={register?"10자 이상의 비밀번호":"비밀번호를 입력해 주세요"}/></label>{register&&<label>비밀번호 확인<input name="confirmation" type="password" autoComplete="new-password" required minLength={10} maxLength={128} placeholder="한 번 더 입력해 주세요"/></label>}{register&&<RegistrationConsent/>}{(error||connectionError)&&<div className="error" role="alert">{error||connectionError}</div>}<button className="button primary auth-submit" disabled={busy}>{busy?<Busy text="확인 중"/>:register?"계정 만들고 시작하기":"나의 수면 리포트 열기"}<ArrowRight size={18}/></button></form><div className="auth-divider"><span>달잠이 처음이라면</span></div><button className="button demo-button" onClick={onDemo}><Sparkles size={17}/>가상 기록으로 먼저 둘러보기<ArrowUpRight size={16}/></button><p className="auth-footnote">체험 모드에는 실제 건강 정보가 포함되지 않습니다.<br/>웨어러블 기록은 의학적 진단을 대신하지 않아요.</p><InstallHelpButton/></div><span className="auth-bottom">조금 더 나은 밤, 조금 더 가벼운 아침.</span></section></main>;
 }
 
 export default function SleepApp() {
+  const keyboardOpen=useMobileKeyboard();
   const [boot,setBoot]=useState(true),[user,setUser]=useState<User|null>(null),[demo,setDemo]=useState(false);
   const [page,setPage]=useState<Page>("dashboard"),[records,setRecords]=useState<SleepRecord[]>([]),[selected,setSelected]=useState("");
   const [coachingBack,setCoachingBack]=useState<"dashboard"|"recordDetail">("dashboard");
@@ -99,14 +104,28 @@ export default function SleepApp() {
   const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
   const [coachingRevision,setCoachingRevision]=useState(0);
   const [error,setError]=useState(""),[notice,setNotice]=useState(""),[days,setDays]=useState(7),[end,setEnd]=useState(today);
-  const [upload,setUpload]=useState(false),[file,setFile]=useState<File|null>(null),[dragging,setDragging]=useState(false),[confirmation,setConfirmation]=useState<Confirmation|null>(null),[phrase,setPhrase]=useState("");
+  const [uploadView,setUploadView]=useState<"file"|"guide"|null>(null);
+  const upload=uploadView!==null;
+  const [file,setFile]=useState<File|null>(null),[dragging,setDragging]=useState(false),[confirmation,setConfirmation]=useState<Confirmation|null>(null),[phrase,setPhrase]=useState("");
+  const [isAppleMobile,setIsAppleMobile]=useState(false);
   const [backup,setBackup]=useState<{backup_count:number;retention_days:number;pending:number}|null>(null);
   const fileInput=useRef<HTMLInputElement>(null);
+  const chooseFileButton=useRef<HTMLButtonElement>(null);
+  const uploadOpener=useRef<HTMLElement|null>(null);
   const main=useRef<HTMLElement>(null);
   const latest=records[0];
   const coachingRecordId=page==="dashboard" ? latest?.analysis_id : selected;
   const healthSynced=useCallback(()=>setRevision(n=>n+1),[]);
-  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUpload(false);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
+  useEffect(()=>{
+    const update=()=>{
+      const platform=window.DaljamNative?.platform;
+      setIsAppleMobile(platform==="ios"||installPlatform(navigator,platform==="android")==="ios");
+    };
+    update();
+    window.addEventListener("daljam-native-ready",update);
+    return()=>window.removeEventListener("daljam-native-ready",update);
+  },[]);
+  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
   useEffect(()=>{if(new URLSearchParams(window.location.search).get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
   useEffect(()=>{
     if(!accountId||demo)return;
@@ -151,14 +170,14 @@ export default function SleepApp() {
   },[page,user,demo,revision,reset]);
   useEffect(()=>{
     if(!upload&&!confirmation)return;
-    const previous=document.activeElement as HTMLElement|null;
+    const previous=upload?uploadOpener.current:document.activeElement as HTMLElement|null;
     const dialog=document.querySelector<HTMLElement>('[role="dialog"],[role="alertdialog"]');
     const overflow=document.body.style.overflow;
     document.body.style.overflow="hidden";
-    const controls=()=>Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]):not([type="file"]),select:not([disabled])')||[]).filter(e=>e.getClientRects().length);
-    const frame=requestAnimationFrame(()=>controls()[0]?.focus());
+    const controls=()=>Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]):not([type="file"]),select:not([disabled]),a[href],summary')||[]).filter(e=>e.getClientRects().length);
+    const frame=requestAnimationFrame(()=>(dialog?.querySelector<HTMLElement>("[data-initial-focus]")??controls()[0])?.focus());
     const close=(e:KeyboardEvent)=>{
-      if(e.key==="Escape"&&!busy){setUpload(false);setConfirmation(null);}
+      if(e.key==="Escape"&&!busy){setUploadView(null);setConfirmation(null);}
       if(e.key==="Tab"){
         const items=controls(),first=items[0],last=items.at(-1);
         if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
@@ -166,7 +185,7 @@ export default function SleepApp() {
       }
     };
     window.addEventListener("keydown",close);
-    return()=>{cancelAnimationFrame(frame);window.removeEventListener("keydown",close);document.body.style.overflow=overflow;previous?.focus();};
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener("keydown",close);document.body.style.overflow=overflow;previous?.focus({preventScroll:true});};
   },[upload,confirmation,busy]);
   const record=records.find(s=>s.analysis_id===selected);
   const stageBreakdown=page==="recordDetail"&&record?sleepStageBreakdown(record):null;
@@ -244,8 +263,27 @@ export default function SleepApp() {
     }
     setError("");setFile(f);
   }
-  function openUpload(){if(demo){setNotice("체험 모드에서는 가상 기록을 보여 드려요. 로그인을 하면 내 파일을 분석할 수 있습니다.");return;}setFile(null);setError("");setUpload(true);}
-  async function importFile(){if(!file)return;const form=new FormData();form.set("file",file);await perform(async()=>{const r=await api<{added_sessions:number;analysis_ids:string[]}>("analyze","POST",form);setUpload(false);setSelected(r.analysis_ids[0]||"");setRevision(n=>n+1);navigate(r.analysis_ids.length?"recordDetail":"records");setNotice(r.added_sessions?"수면 기록을 분석하고 저장했어요.":"이미 저장된 기록이에요. 기존 분석을 열었어요.");});}
+  function openUpload(){
+    if(demo){setNotice("체험 모드에서는 가상 기록을 보여 드려요. 로그인을 하면 내 파일을 분석할 수 있습니다.");return;}
+    uploadOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    setFile(null);
+    setError("");
+    setUploadView("file");
+  }
+  function openIphoneGuide(){
+    if(!isAppleMobile||demo)return;
+    openUpload();
+    setUploadView("guide");
+  }
+  function returnToUpload(pickFile=false){
+    setUploadView("file");
+    requestAnimationFrame(()=>{
+      chooseFileButton.current?.closest(".modal")?.scrollTo({top:0});
+      chooseFileButton.current?.focus({preventScroll:true});
+    });
+    if(pickFile)fileInput.current?.click();
+  }
+  async function importFile(){if(!file)return;const form=new FormData();form.set("file",file);await perform(async()=>{const r=await api<{added_sessions:number;analysis_ids:string[]}>("analyze","POST",form);setUploadView(null);setSelected(r.analysis_ids[0]||"");setRevision(n=>n+1);navigate(r.analysis_ids.length?"recordDetail":"records");setNotice(r.added_sessions?"수면 기록을 분석하고 저장했어요.":"이미 저장된 기록이에요. 기존 분석을 열었어요.");});}
   function exportRecord(){if(!record)return;const segments=record.segments.map(({start,end,stage})=>({start,end,stage}));const text=JSON.stringify({schema_version:1,timezone:record.timezone,source:record.source,sessions:[{start:record.start,end:record.end,segments,vitals_summary:record.vitals_summary}]},null,2);const url=URL.createObjectURL(new Blob([text],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download=`sleep-${record.start.slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   async function savePreferences(values:Preferences, method:"POST"|"PATCH"){
     const owner=user?.id;
@@ -282,7 +320,7 @@ export default function SleepApp() {
   const activeTab:MainTab = page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
   const backTo:Page|null = page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
-  return <div className="mobile-app" data-daljam-theme={characterId}>
+  return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page} data-keyboard-open={keyboardOpen||undefined}>
     <MainNavigation active={activeTab} onNavigate={navigate}/>
     <main ref={main} className="mobile-content">
     {backTo&&<button type="button" className="dashboard-link page-back" onClick={()=>navigate(backTo)}><ArrowLeft size={19}/>{backTo==="records"?"기록 목록":backTo==="recordDetail"?"기록 상세":backTo==="account"?"마이":"홈"}</button>}
@@ -315,7 +353,7 @@ export default function SleepApp() {
         <label className="profile-setting">캐릭터<select value={demoCharacter} onChange={event=>setDemoCharacter(event.target.value as CharacterId)}>
           {CHARACTERS.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced}/>}/>
+      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onIphoneGuide={isAppleMobile&&!demo?openIphoneGuide:undefined} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced}/>}/>
     </div>
     <SleepPlan key={user.id} active={page==="plan"} coaching={saved} demo={demo}/>
 
@@ -397,7 +435,40 @@ export default function SleepApp() {
     <footer className="footer"><span><Moon size={14}/>달잠 · 조금 더 나은 밤을 위해</span><span>웨어러블 추정 기록 기반 · 의료 진단 서비스가 아닙니다</span></footer>
     </main>
 
-    {upload&&<div className="modal-overlay" onClick={()=>{if(!busy)setUpload(false);}}><section role="dialog" aria-modal="true" aria-labelledby="upload-title" className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><span className="modal-symbol"><CloudUpload size={26}/></span><button className="icon-button" aria-label="업로드 닫기" disabled={busy} onClick={()=>setUpload(false)}><X size={21}/></button></div><span className="eyebrow">A NEW PAGE IN YOUR SLEEP JOURNAL</span><h2 id="upload-title">새로운 밤을 기록해요</h2><p>웨어러블에서 내보낸 수면 파일을 올려 주세요.</p><input ref={fileInput} className="sr-only" type="file" accept=".md,.json" aria-label="수면 파일 선택" onChange={e=>chooseFile(e.target.files?.[0])}/><button className={`dropzone ${dragging?"dragging":""}`} onClick={()=>fileInput.current?.click()} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);chooseFile(e.dataTransfer.files[0]);}}><span><FileText size={24}/><FileJson size={24}/></span><strong>{file?file.name:"파일을 여기에 놓거나 클릭해 주세요"}</strong><small>{file?`${(file.size/1024).toFixed(1)} KB · 다른 파일 선택`:"Markdown (.md), JSON (.json) · 최대 4MiB"}</small></button><div className="soft-info"><ShieldCheck size={16}/><p>Health Data Export MD, 수면 JSON v1, Health Export Kit JSON v2를 지원합니다. Apple 건강 앱의 XML·ZIP은 지원하지 않습니다.</p></div>{error&&<div className="error" role="alert">{error}</div>}<button className="button primary full" disabled={!file||busy} onClick={importFile}>{busy?<Busy text="수면 기록을 분석하고 있어요"/>:<><Sparkles size={17}/>분석하고 내 기록에 저장</>}</button><p className="disclaimer">분석·저장은 AI 코칭을 자동으로 요청하지 않습니다.</p></section></div>}
+    {upload&&<div className="modal-overlay" onClick={()=>{if(!busy)setUploadView(null);}}>
+      <section role="dialog" aria-modal="true" aria-labelledby="upload-title"
+        className={uploadView==="guide"?"modal iphone-guide-modal":"modal"} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-symbol"><CloudUpload size={26}/></span>
+          <button type="button" className="icon-button" aria-label={uploadView==="guide"?"사진 안내 닫기":"업로드 닫기"}
+            disabled={busy} onClick={()=>setUploadView(null)}><X size={21}/></button>
+        </div>
+        <input ref={fileInput} className="sr-only" type="file" tabIndex={-1} accept=".md,.json"
+          aria-label="수면 파일 선택" onChange={e=>chooseFile(e.target.files?.[0])}/>
+        {uploadView==="guide"
+          ? <IphoneSleepGuide onReturn={()=>returnToUpload()} onChooseFile={()=>returnToUpload(true)}/>
+          : <>
+            <span className="eyebrow">A NEW PAGE IN YOUR SLEEP JOURNAL</span>
+            <h2 id="upload-title">새로운 밤을 기록해요</h2>
+            <p>웨어러블에서 내보낸 수면 파일을 올려 주세요.</p>
+            {isAppleMobile&&!demo&&<button type="button" className="button secondary iphone-guide-entry" disabled={busy}
+              onClick={()=>setUploadView("guide")}><CircleHelp size={16} aria-hidden="true"/> 사진으로 따라 하기</button>}
+            <button ref={chooseFileButton} className={`dropzone ${dragging?"dragging":""}`} onClick={()=>fileInput.current?.click()}
+              onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)}
+              onDrop={e=>{e.preventDefault();setDragging(false);chooseFile(e.dataTransfer.files[0]);}}>
+              <span><FileText size={24}/><FileJson size={24}/></span>
+              <strong>{file?file.name:"파일을 여기에 놓거나 클릭해 주세요"}</strong>
+              <small>{file?`${(file.size/1024).toFixed(1)} KB · 다른 파일 선택`:"Markdown (.md), JSON (.json) · 최대 4MiB"}</small>
+            </button>
+            <div className="soft-info"><ShieldCheck size={16}/><p>Health Data Export MD, 수면 JSON v1, Health Export Kit JSON v2를 지원합니다. Apple 건강 앱의 XML·ZIP은 지원하지 않습니다.</p></div>
+            {error&&<div className="error" role="alert">{error}</div>}
+            <button className="button primary full" disabled={!file||busy} onClick={importFile}>
+              {busy?<Busy text="수면 기록을 분석하고 있어요"/>:<><Sparkles size={17}/>분석하고 내 기록에 저장</>}
+            </button>
+            <p className="disclaimer">분석·저장은 AI 코칭을 자동으로 요청하지 않습니다.</p>
+          </>}
+      </section>
+    </div>}
     {confirmation&&<div className="modal-overlay"><section className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"><div className="modal-header"><span className="danger-icon"><Trash2 size={23}/></span><button className="icon-button" aria-label="취소" disabled={busy} onClick={()=>setConfirmation(null)}><X size={20}/></button></div><h2 id="confirm-title">{confirmation.title}</h2><p>{confirmation.description}</p>{confirmation.permanent&&<label>확인을 위해 ‘영구 삭제’를 입력해 주세요<input value={phrase} onChange={e=>setPhrase(e.target.value)} placeholder="영구 삭제" autoFocus/></label>}{error&&<div className="error" role="alert">{error}</div>}<div className="modal-actions"><button className="button secondary" disabled={busy} onClick={()=>setConfirmation(null)}>취소</button><button className="button danger-button" disabled={busy||!!confirmation.permanent&&phrase!=="영구 삭제"} onClick={async()=>{const ok=await perform(confirmation.run,"기록을 정리했어요.");if(ok)setConfirmation(null);}}>{busy?<Busy text="처리 중"/>:confirmation.permanent?"영구 삭제":"휴지통으로 이동"}</button></div></section></div>}
   </div>;
 }

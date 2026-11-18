@@ -1,4 +1,4 @@
-import {ArrowRight, CalendarDays, LoaderCircle, Moon, Plus, RotateCcw, Sparkles} from "lucide-react";
+import {ArrowRight, CalendarDays, ChevronRight, LoaderCircle, Moon, Plus, RotateCcw, Sparkles} from "lucide-react";
 import {clock, minutes, shortDate, type Coaching, type SleepRecord} from "@/lib/sleep";
 import SleepTimeline from "./sleep-timeline";
 
@@ -70,8 +70,8 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
     </section>
 
     <nav className="dashboard-feature-grid" aria-label="대시보드 기능">
-      <button type="button" className="dashboard-feature" onClick={onCoaching}><Sparkles size={21} aria-hidden="true"/><span>AI 코칭</span></button>
-      <button type="button" className="dashboard-feature" onClick={onMorningPlan}><CalendarDays size={21} aria-hidden="true"/><span>내일 계획</span></button>
+      <button type="button" className="dashboard-feature" onClick={onCoaching}><Sparkles size={21} aria-hidden="true"/><span>AI 코칭</span><ChevronRight className="dashboard-feature-arrow" size={17} aria-hidden="true"/></button>
+      <button type="button" className="dashboard-feature" onClick={onMorningPlan}><CalendarDays size={21} aria-hidden="true"/><span>내일 계획</span><ChevronRight className="dashboard-feature-arrow" size={17} aria-hidden="true"/></button>
     </nav>
   </div>;
 }

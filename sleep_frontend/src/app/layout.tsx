@@ -4,6 +4,7 @@ import "./globals.css";
 import "./mobile-ui.css";
 import "./personalization.css";
 import "./sleep-plan.css";
+import "./iphone-sleep-guide.css";
 
 export const metadata: Metadata = {
   title: "달잠 · 나의 수면 리포트",
@@ -15,5 +16,5 @@ export const metadata: Metadata = {
 export const viewport:Viewport={width:"device-width",initialScale:1,viewportFit:"cover",themeColor:"#7861ac"};
 
 export default function RootLayout({ children }: Readonly<{children: React.ReactNode}>) {
-  return <html lang="ko"><body>{children}<PwaInstall/></body></html>;
+  return <html lang="ko"><body><PwaInstall>{children}</PwaInstall></body></html>;
 }

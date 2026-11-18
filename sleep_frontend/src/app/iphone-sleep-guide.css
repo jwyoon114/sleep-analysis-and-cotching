@@ -1,0 +1,34 @@
+.modal.iphone-guide-modal {
+  max-width:32rem;
+  max-height:calc(100dvh - max(1.875rem, env(safe-area-inset-top)) - env(safe-area-inset-bottom));
+  padding:clamp(0.9rem, 4vw, 1.5rem);
+}
+
+.iphone-guide-modal .modal-header {margin-bottom:0.75rem;}
+.iphone-guide-modal .modal-header .icon-button {min-width:44px;min-height:44px;color:var(--ink);}
+.iphone-guide-modal #upload-title {color:var(--ink);font-size:1.25rem;line-height:1.35;word-break:keep-all;overflow-wrap:anywhere;}
+.iphone-guide-progress {display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;}
+.iphone-guide-progress span {color:var(--purple);font-size:0.875rem;font-weight:700;}
+.iphone-guide-progress progress {flex:1;min-width:5rem;height:0.75rem;accent-color:var(--purple);}
+.iphone-guide-step {min-width:0;}
+.iphone-guide-step h3 {margin:0 0 0.35rem;font-size:1.1rem;line-height:1.35;}
+.iphone-guide-step h3:focus {outline:none;}
+.iphone-guide-step p {margin:0 0 0.75rem;font-size:0.95rem;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere;}
+.iphone-guide-step a {text-decoration:none;}
+.iphone-guide-photo {position:relative;margin:0.75rem 0;overflow:hidden;border:1px solid var(--line);border-radius:0.875rem;background:#090609;}
+.iphone-guide-photo img {display:block;width:100%;height:auto;}
+.iphone-guide-photo span {
+  position:absolute;
+  pointer-events:none;
+  border:2px dashed #fff4a7;
+  border-radius:0.625rem;
+  box-shadow:0 0 0 1px #19101e, inset 0 0 0 1px #19101e;
+}
+.iphone-guide-format {border:1px solid var(--line);border-radius:0.75rem;padding:0.5rem 0.7rem;background:var(--surface-inset);}
+.iphone-guide-format summary {cursor:pointer;min-height:2.75rem;padding:0.6rem 0;font-weight:700;color:var(--ink);}
+.iphone-guide-actions {display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.9rem;}
+.iphone-guide-actions .button {flex:1 1 auto;}
+.iphone-guide-modal .button,.iphone-guide-entry {min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+.iphone-guide-entry svg,.iphone-guide-modal :is(a,button) svg {flex:none;}
+.modal .iphone-guide-entry {margin:0.75rem 0 0;}
+.iphone-guide-modal :is(a,button,summary):focus-visible {outline:2px solid var(--purple);outline-offset:2px;}
