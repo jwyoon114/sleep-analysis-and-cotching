@@ -14,7 +14,7 @@ import history_service
 import backup_policy
 import sleep_alarms
 import health_sync
-from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
+from health_records import ManualSleepConflict, delete_session, get_owned_session, import_export, list_sessions, overview, save_manual_sleep
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
 from app_database import DatabaseUnavailable, BackupPolicyPending, connect_application_postgres, uses_postgres
@@ -83,6 +83,13 @@ class HealthConnectionRequest(BaseModel):
     source_id: str = Field(min_length=1, max_length=300)
     source_name: str = Field(min_length=1, max_length=120)
     auto_coach: bool = False
+
+
+class ManualSleepRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    start_local: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+    end_local: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+    timezone: str = Field(min_length=1, max_length=80)
 
 
 def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
@@ -258,6 +265,27 @@ def import_watch(file: UploadFile = File(...), user=Depends(require_user)):
 def watch_sessions(user=Depends(require_user)):
     records = list_sessions(user["id"])
     return {"sessions": records, "overview": overview(records)}
+
+
+def _write_manual_sleep(request, account_id, analysis_id=None):
+    try:
+        return save_manual_sleep(account_id, request.start_local, request.end_local, request.timezone, analysis_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ManualSleepConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@app.post("/watch/manual-sessions")
+def create_manual_sleep(request: ManualSleepRequest, user=Depends(require_user)):
+    return _write_manual_sleep(request, user["id"])
+
+
+@app.patch("/watch/manual-sessions/{analysis_id}")
+def edit_manual_sleep(analysis_id: str, request: ManualSleepRequest, user=Depends(require_user)):
+    return _write_manual_sleep(request, user["id"], analysis_id)
 
 
 @app.get("/watch/sessions/{analysis_id}")

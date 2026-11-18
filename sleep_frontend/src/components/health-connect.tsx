@@ -126,6 +126,8 @@ export default function HealthConnect({user,onSynced,onAndroidStatus,onManualEnt
       <p role={result.role} className={result.role==='alert'?'error':undefined}>{result.text}</p>
       {result.manual&&onManualEntry&&<button type="button" className="button secondary" onClick={onManualEntry}>수면 시간 직접 입력</button>}
     </div>}
+    {!busy&&!result&&native&&state?.available===false&&onManualEntry&&
+      <button type="button" className="button secondary" onClick={onManualEntry}>수면 시간 직접 입력</button>}
     <a href="/health-privacy" target="_blank" rel="noreferrer">건강 데이터 사용 안내</a>
   </section>;
 }

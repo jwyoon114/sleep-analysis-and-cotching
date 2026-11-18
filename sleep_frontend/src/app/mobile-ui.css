@@ -232,6 +232,7 @@ body:has(.mobile-app)::before {
   min-width:0;max-width:100%;padding-inline:12px;white-space:normal;text-align:start;font-size:.8125rem;
 }
 .dashboard-connection-actions .install-help-button {color:var(--purple);}
+.manual-entry-button {justify-self:start;}
 .mobile-app .dashboard-link {color:var(--purple);}
 .mobile-app .dashboard-coaching-card {
   min-height:112px;

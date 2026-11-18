@@ -3,7 +3,7 @@ from datetime import date
 import streamlit as st
 import history_service
 import backup_policy
-from health_records import delete_session, import_export, list_sessions, overview
+from health_records import delete_session, import_export, is_manual_sleep, list_sessions, overview
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 
 LABELS = {"core": "코어 수면", "deep": "깊은 수면", "rem": "렘수면", "wake": "각성", "unspecified": "수면(단계 미분류)"}
@@ -159,7 +159,7 @@ def render_sleep_pattern(record):
 
 
 def render_records(user):
-    sessions = list_sessions(user["id"])
+    sessions = [session for session in list_sessions(user["id"]) if not is_manual_sleep(session)]
     st.subheader("저장된 분석 기록 다시 보기")
     st.caption("파일을 다시 올리지 않아도 아래에서 과거 분석과 저장된 AI 코칭을 조회할 수 있습니다.")
     if not sessions:
@@ -317,7 +317,7 @@ def render_comparison(user):
     import altair as alt
     import pandas as pd
     st.subheader("기간별 수면 기록 비교")
-    sessions = list_sessions(user["id"])
+    sessions = [session for session in list_sessions(user["id"]) if not is_manual_sleep(session)]
     if not sessions:
         st.info("비교할 기록이 없습니다. ‘새 분석’에서 기록을 저장하세요.")
         return
