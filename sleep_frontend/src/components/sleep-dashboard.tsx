@@ -1,5 +1,5 @@
-import {ArrowRight, CalendarDays, ChevronRight, LoaderCircle, Moon, Plus, RotateCcw, Sparkles} from "lucide-react";
-import {clock, minutes, shortDate, type Coaching, type SleepRecord} from "@/lib/sleep";
+import {ArrowRight, CalendarDays, LoaderCircle, Plus, RotateCcw} from "lucide-react";
+import {clock, type Coaching, type SleepRecord} from "@/lib/sleep";
 import SleepTimeline from "./sleep-timeline";
 
 type Props = {
@@ -21,25 +21,20 @@ function coachingExcerpt(text: string) {
 }
 
 export default function SleepDashboard({record, recordsLoading, coaching, coachingStatus, onUpload, onRecord, onCoaching, onRetryCoaching, onMorningPlan}: Props) {
-  const duration = record && Number.isFinite(record.asleep_minutes) && record.asleep_minutes >= 0
-    ? minutes(record.asleep_minutes)
-    : "기록 없음";
   const excerpt = coaching ? coachingExcerpt(coaching.coaching) : "";
 
   return <div className="sleep-dashboard">
     <section className="dashboard-card dashboard-sleep-card" aria-labelledby="dashboard-sleep-title">
       <header className="dashboard-card-heading">
         <div className="dashboard-card-title">
-          <span className="dashboard-card-icon" aria-hidden="true"><Moon size={19}/></span>
           <div>
-            <h2 id="dashboard-sleep-title">수면 단계 변화</h2>
-            {record && Number.isFinite(Date.parse(record.start)) && <p>{shortDate(record.start)} 수면 기록</p>}
+            <h2 id="dashboard-sleep-title">수면 흐름</h2>
+            {record && <p>{clock(record.start)} – {clock(record.end)}</p>}
           </div>
         </div>
-        {record && <div className="dashboard-duration"><span>총 수면 시간</span><strong>{duration}</strong><span>{clock(record.start)} – {clock(record.end)}</span></div>}
       </header>
       {record ? <>
-        <SleepTimeline key={record.analysis_id} record={record} compact/>
+        <SleepTimeline key={record.analysis_id} record={record} compact interactive={false}/>
         <div className="dashboard-card-actions">
           <button type="button" className="dashboard-link" onClick={onRecord}>수면 기록 자세히 보기<ArrowRight size={16}/></button>
         </div>
@@ -54,10 +49,9 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
     <section className="dashboard-card dashboard-coaching-card" aria-labelledby="dashboard-coaching-title">
       <header className="dashboard-card-heading">
         <div className="dashboard-card-title">
-          <span className="dashboard-card-icon" aria-hidden="true"><Sparkles size={19}/></span>
           <h2 id="dashboard-coaching-title">오늘의 코칭</h2>
         </div>
-        {excerpt && <button type="button" className="dashboard-link" onClick={onCoaching}>자세히 보기<ArrowRight size={16}/></button>}
+        {record && <button type="button" className="dashboard-link" onClick={onCoaching}>{excerpt?"코칭 보기":"코칭 받기"}<ArrowRight size={16}/></button>}
       </header>
       {!record ? <p className="dashboard-state">수면 기록을 추가하면 코칭을 받을 수 있어요.</p>
         : coachingStatus === "loading" ? <p className="dashboard-state" role="status"><LoaderCircle className="spin" size={17} aria-hidden="true"/>저장된 코칭 불러오는 중</p>
@@ -69,9 +63,8 @@ export default function SleepDashboard({record, recordsLoading, coaching, coachi
         : <p className="dashboard-state">이 수면 기록에 저장된 코칭이 아직 없어요.</p>}
     </section>
 
-    <nav className="dashboard-feature-grid" aria-label="대시보드 기능">
-      <button type="button" className="dashboard-feature" onClick={onCoaching}><Sparkles size={21} aria-hidden="true"/><span>AI 코칭</span><ChevronRight className="dashboard-feature-arrow" size={17} aria-hidden="true"/></button>
-      <button type="button" className="dashboard-feature" onClick={onMorningPlan}><CalendarDays size={21} aria-hidden="true"/><span>내일 계획</span><ChevronRight className="dashboard-feature-arrow" size={17} aria-hidden="true"/></button>
+    <nav className="dashboard-next-step" aria-label="다음 할 일">
+      <button type="button" className="dashboard-link" onClick={onMorningPlan}><CalendarDays size={18} aria-hidden="true"/>내일 계획 세우기<ArrowRight size={16} aria-hidden="true"/></button>
     </nav>
   </div>;
 }
