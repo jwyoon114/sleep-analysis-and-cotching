@@ -15,7 +15,7 @@ import postgres_migrate
 from postgres_migration_fixture import PostgresTestCluster
 
 
-class ManualSleepTests(unittest.TestCase):
+class ManualSleepFixture:
     @classmethod
     def setUpClass(cls):
         pg_bin = os.getenv("DALJAM_TEST_POSTGRES_BIN")
@@ -57,6 +57,7 @@ class ManualSleepTests(unittest.TestCase):
         return self.client.post("/analyze", headers=self.owner,
                                 files={"file": ("synthetic.json", json.dumps(data), "application/json")})
 
+class ManualSleepTests(ManualSleepFixture, unittest.TestCase):
     def test_record_crud_access_and_concurrent_duplicates(self):
         with ThreadPoolExecutor(max_workers=2) as pool:
             replies = list(pool.map(lambda _: self.manual().raise_for_status().json(), range(2)))
@@ -107,18 +108,19 @@ class ManualSleepTests(unittest.TestCase):
         self.assertEqual(self.manual("2024-11-15T00:00", "2024-11-15T08:00").status_code, 409)
         self.assertEqual(self.manual(record_id=wearable_id).status_code, 404)
         manual_id = self.manual().raise_for_status().json()["record"]["analysis_id"]
-        with patch.dict(os.environ, {"COACHING_ENGINE": "openai"}), patch.object(
-            coaching_service, "_generate_openai", side_effect=AssertionError("External AI is forbidden for manual records")
+        with patch.object(
+            coaching_service, "_generate_openai", side_effect=AssertionError("Wearable adapter cannot process manual records")
         ):
             coaching = self.client.post("/coach", headers=self.owner, json={
                 "analysis_id": manual_id, "caffeine": "있음",
             }).raise_for_status().json()
         self.assertIn("추정 수면 시간은 8시간", coaching["coaching"])
-        self.assertNotRegex(coaching["coaching"], r"각성|깊은 수면|REM|카페인")
+        self.assertNotRegex(coaching["coaching"], r"각성|깊은 수면|REM")
+        self.assertIn("카페인 섭취 시각", coaching["coaching"])
         self.assertEqual(coaching["context"]["engine"], "manual-rules")
         self.assertEqual(coaching["context"]["record_ids"], [manual_id, wearable_id])
         self.assertEqual(set(coaching["context"]["input_summary"]["selected_record"]),
-                         {"start", "end", "timezone", "estimated_sleep_minutes"})
+                         {"start", "end", "timezone", "source", "estimated_sleep_minutes"})
         self.manual(end="2024-11-16T06:45", record_id=manual_id).raise_for_status()
         history = self.client.get(f"/watch/sessions/{manual_id}/coaching", headers=self.owner).json()["history"]
         self.assertEqual(history[0]["coaching"], coaching["coaching"])

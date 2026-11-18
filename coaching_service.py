@@ -1,4 +1,4 @@
-"""Coaching for account-owned wearable sleep records."""
+"""Coaching for account-owned wearable and self-reported sleep records."""
 from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -14,8 +14,8 @@ from account_personalization import get_personalization
 from coaching_expression import DEFAULT_EXPRESSION, expression_snapshot, render_personalized_answer
 from coaching_free import generate_free_coaching
 from coaching_patterns import _record_day, _timestamp
-from coaching_rules import _duration_text
 from health_records import is_manual_sleep, connect, get_owned_session, list_sessions, overview
+import manual_coaching
 from service_limits import reserve_coaching_request, setting
 
 def api_limit_detail(error):
@@ -218,32 +218,53 @@ def _window_boundary(records, field, select):
     return select(values)[1] if values else ""
 
 
-def _manual_advice(record, history, expression):
-    start = _timestamp(record["start"])
-    earlier = [row for row in _rule_history(record, history)
-               if (end := _timestamp(row.get("end"))) is not None and end <= start]
-    previous = max(earlier, key=lambda row: _timestamp(row["end"]), default=None)
-    recent = [previous] if previous else []
-    duration = _duration_text(record["estimated_sleep_minutes"])
-    casual = expression["speech"] == "casual"
-    interval = f"{record['start'][11:16]}부터 {record['end'][11:16]}까지"
-    observation = (f"직접 입력한 시각은 {interval}야. 추정 수면 시간은 {duration}이야." if casual
-                   else f"직접 입력한 시각은 {interval}예요. 추정 수면 시간은 {duration}이에요.")
-    if previous:
-        earlier_interval = f"{previous['start'][11:16]}부터 {previous['end'][11:16]}까지"
-        observation += (f" 이전 기록의 시간대는 {earlier_interval}야." if casual
-                        else f" 이전 기록의 시간대는 {earlier_interval}예요.")
-    suggestion = ("며칠 동안 취침·기상 시각을 적고, 반복하기 쉬운 시간대를 하나 정해 봐."
-                  if casual else "며칠 동안 취침·기상 시각을 적고, 반복하기 쉬운 시간대를 하나 정해 보세요.")
-    limit = ("직접 입력한 시각을 바탕으로 계산한 값이야." if casual
-             else "직접 입력한 시각을 바탕으로 계산한 값이에요.")
-    answer = f"선택 기록\n{observation}\n\n실천 제안\n{suggestion}\n\n데이터 한계\n{limit}"
-    fields = ("start", "end", "timezone", "estimated_sleep_minutes")
-    summary = {"selected_record": {key: record[key] for key in fields}, "previous_records": [
-        {key: row[key] for key in fields[:3]} for row in recent
-    ]}
-    context = {"engine": "manual-rules", "model": "규칙 기반", "prompt_version": "manual-rules-v1",
-               "expression": expression, "input_summary": summary}
+def _manual_openai(data):
+    from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
+
+    try:
+        key, model = settings()
+    except ValueError:
+        return None, {"fallback_reason": "configuration"}
+    input_text = json.dumps(data, ensure_ascii=False)
+    input_limit = setting("COACHING_MAX_INPUT_BYTES", 64000)
+    if input_limit and len(input_text.encode("utf-8")) > input_limit:
+        return None, {"fallback_reason": "input_limit"}
+    try:
+        with OpenAI(api_key=key, timeout=45, max_retries=0) as client:
+            response = client.responses.create(
+                model=model, instructions=manual_coaching.INSTRUCTIONS, input=input_text,
+                text={"format": manual_coaching.OUTPUT_FORMAT}, max_output_tokens=1400, store=False,
+            )
+        if (getattr(response, "status", None) != "completed"
+                or not isinstance(getattr(response, "output_text", None), str)):
+            raise manual_coaching.InvalidManualAdvice()
+        suggestions, questions = manual_coaching.parse_advice(response.output_text, data)
+    except APITimeoutError:
+        return None, {"fallback_reason": "timeout"}
+    except RateLimitError:
+        return None, {"fallback_reason": "rate_limit"}
+    except APIConnectionError:
+        return None, {"fallback_reason": "connection"}
+    except APIStatusError as error:
+        reason = "authentication" if error.status_code in (401, 403) else "provider_error"
+        return None, {"fallback_reason": reason}
+    except (manual_coaching.InvalidManualAdvice, APIResponseValidationError):
+        return None, {"fallback_reason": "invalid_response"}
+    return manual_coaching.render_answer(data, suggestions, questions), {
+        "engine": "manual-openai", "requested_model": model,
+        "model": getattr(response, "model", None) or model,
+    }
+
+
+def _manual_advice(record, history, lifestyle, expression, engine):
+    recent = manual_coaching.recent_history(record, history)
+    data = manual_coaching.payload(record, recent, lifestyle, expression)
+    answer, provider = _manual_openai(data) if engine == "openai" else (None, {})
+    context = {"engine": "manual-rules", "model": "규칙 기반",
+               "prompt_version": manual_coaching.PROMPT_VERSION, "expression": expression,
+               "input_summary": data, **provider}
+    if answer is None:
+        answer = manual_coaching.render_answer(data, manual_coaching.rule_suggestions(data))
     return answer, context, recent
 
 
@@ -258,8 +279,8 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     if is_manual_sleep(session):
         expression = expression_snapshot(get_personalization(account_id, db_path))
         reserve_coaching_request(account_id, db_path)
-        lifestyle = {}
-        answer, context, recent = _manual_advice(session, history, expression)
+        lifestyle = manual_coaching.clean_lifestyle(lifestyle)
+        answer, context, recent = _manual_advice(session, history, lifestyle, expression, engine)
     elif engine == "openai":
         history = [row for row in history if not is_manual_sleep(row)]
         recent = history[:14]
@@ -292,6 +313,13 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         active = db.execute(f"SELECT count(*) FROM sessions WHERE subject=? AND id IN ({placeholders}) AND NOT EXISTS(SELECT 1 FROM trash_sessions WHERE session_id=sessions.id)", (account_id, *referenced)).fetchone()[0]
         if active != len(referenced):
             raise ValueError("참고한 분석 기록이 삭제되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
+        if is_manual_sleep(session):
+            rows = db.execute(f"SELECT id, payload FROM sessions WHERE subject=? AND id IN ({placeholders})",
+                              (account_id, *referenced))
+            for row in rows:
+                current = json.loads(row["payload"])
+                if manual_coaching.summary(current) != manual_coaching.summary(referenced[row["id"]]):
+                    raise ValueError("참고한 수면 기록이 변경되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
         db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)", (coaching_id, account_id, session_id, answer, json.dumps(lifestyle, ensure_ascii=False), created))
         db.execute("INSERT INTO coaching_context VALUES(?,?)", (coaching_id, json.dumps(context, ensure_ascii=False)))
     return {"id": coaching_id, "analysis_id": session_id, "coaching": answer, "created_at": created, "context": context}

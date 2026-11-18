@@ -5,7 +5,7 @@ import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Calenda
 import {api, ApiError, clock, colors, compare, daily, labels, minutes, recordDuration, shortDate, today, type Coaching, type Daily, type ManualSleepInput, type ManualSleepRecord, type SleepRecord, type Trash, type User} from "@/lib/sleep";
 import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
-import {coachingDataNotes} from "@/lib/coaching-body";
+import {coachingDataNotes,manualCoachingSource} from "@/lib/coaching-body";
 import {installPlatform, type InstallPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
@@ -239,6 +239,7 @@ export default function SleepApp() {
   const requestFailure=activeRequest?.kind==="error" ? activeRequest : null;
   const savedDate=saved ? coachingDate(saved.created_at) : null;
   const savedNotes=saved && page==="coaching" ? coachingDataNotes(saved.coaching,saved.context) : [];
+  const manualSource=manualCoachingSource(saved?.context);
   let recordNote="";
   if(record&&record.data_type!=="manual"){
     if(!Number.isFinite(record.asleep_minutes)||record.asleep_minutes<0){
@@ -457,9 +458,12 @@ export default function SleepApp() {
               </div>
               : saved ? <>
                 {demo ? <p className="coach-timestamp">화면 체험용 예시</p> : <>
+                  {manualSource&&<div className="coaching-data-guide" aria-label="코칭 생성 방식">
+                    <strong>{manualSource.title}</strong><p>{manualSource.description}</p>
+                  </div>}
                   <div className="coaching-data-guide">
                     <strong>조언을 만들 때 참고한 기록</strong>
-                    <p>{saved.context?.engine==="manual-rules"?"저장된 조언은 생성 당시의 수면 기록을 기준으로 해요.":"저장된 조언은 생성 당시의 수면 기록과 생활습관 입력을 기준으로 해요."}</p>
+                    <p>{saved.context?.prompt_version==="manual-rules-v1"?"저장된 조언은 생성 당시의 수면 기록을 기준으로 해요.":"저장된 조언은 생성 당시의 수면 기록과 생활습관 입력을 기준으로 해요."}</p>
                     {savedNotes.length>0 && <ul>{savedNotes.map(note=><li key={note}>{note}</li>)}</ul>}
                   </div>
                   {savedDate && <div className="coach-timestamp"><Sparkles size={13}/><span><time dateTime={saved.created_at}>{savedDate}</time>에 생성</span></div>}
@@ -478,12 +482,12 @@ export default function SleepApp() {
             <p className="disclaimer">AI 코칭은 생활습관 참고용입니다. 질환의 진단이나 치료를 대신하지 않습니다.</p>
           </section>
           <section className="panel coach-form-panel">
-            <div className="panel-heading"><div><h2>{record?.data_type==="manual"?"수동 기록으로 코칭 받기":"오늘의 나를 알려주세요"}</h2><p>{record?.data_type==="manual"?"입력한 시각으로 반복하기 쉬운 수면 습관을 찾아봐요.":"입력한 생활습관을 코칭에 참고해요."}</p></div></div>
+            <div className="panel-heading"><div><h2>{record?.data_type==="manual"?"수동 기록으로 코칭 받기":"오늘의 나를 알려주세요"}</h2><p>{record?.data_type==="manual"?"입력한 시각과 선택한 생활습관으로 반복하기 쉬운 습관을 찾아봐요. 생활습관은 미입력으로 두어도 괜찮아요.":"입력한 생활습관을 코칭에 참고해요."}</p></div></div>
             <form onSubmit={requestCoaching}>
-              {record?.data_type!=="manual"&&[{name:"age_group",label:"연령 구분",icon:Sun,options:["미입력","성인","미성년자"]},{name:"caffeine",label:"취침 전 6시간 이내 카페인",icon:Coffee,options:["미입력","없음","있음"]},{name:"regularity",label:"평소 취침·기상 시간",icon:Clock3,options:["미입력","대체로 일정함","자주 달라짐"]},{name:"satisfaction",label:"나의 수면 만족도",icon:Moon,options:["미입력","좋음","보통","나쁨"]}].map(({name,label,icon:Icon,options})=>
+              {[{name:"age_group",label:"연령 구분",icon:Sun,options:["미입력","성인","미성년자"]},{name:"caffeine",label:"취침 전 6시간 이내 카페인",icon:Coffee,options:["미입력","없음","있음"]},{name:"regularity",label:"평소 취침·기상 시간",icon:Clock3,options:["미입력","대체로 일정함","자주 달라짐"]},{name:"satisfaction",label:"나의 수면 만족도",icon:Moon,options:["미입력","좋음","보통","나쁨"]}].map(({name,label,icon:Icon,options})=>
                 <label key={name}><span><Icon size={16}/>{label}</span><select name={name}>{options.map(o=><option key={o}>{o}</option>)}</select></label>
               )}
-              {record?.data_type!=="manual"&&<div className="soft-info"><ShieldCheck size={15}/><p>기본 조언은 달잠 서버에서 기록과 생활습관을 분석해 생성합니다. 서버에서 OpenAI 방식을 활성화한 경우 기록 요약과 입력이 전송되며 API 사용료가 발생할 수 있어요.</p></div>}
+              <div className="soft-info"><ShieldCheck size={15}/><p>기본 조언은 달잠 서버에서 기록과 생활습관을 분석해 생성합니다. 서버에서 OpenAI 방식을 활성화한 경우 기록 요약과 입력이 전송되며 API 사용료가 발생할 수 있어요.{record?.data_type==="manual"&&" AI 응답을 사용할 수 없으면 규칙 기반 대체 조언임을 표시해요."}</p></div>
               {recordNote && <p className="coaching-data-guide">{recordNote}</p>}
               {requestFailure && <div className="error coaching-request-error" role="alert">
                 <strong>조언 요청에 문제가 있었어요</strong>

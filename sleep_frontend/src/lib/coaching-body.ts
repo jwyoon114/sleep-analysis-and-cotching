@@ -1,5 +1,21 @@
 import type { CoachingTone } from "./coaching-preview";
 
+// Read the persisted generation source, so changing server settings cannot relabel old advice.
+export function manualCoachingSource(context?: {engine?:string; fallback_reason?:string} | null) {
+  if(context?.engine==="manual-openai")return {title:"OpenAI 기반 조언",description:"입력한 시각과 기록 요약을 바탕으로 AI가 실천 제안을 작성했어요."};
+  if(context?.engine!=="manual-rules")return null;
+  const reasons:Record<string,string>={
+    timeout:"AI 응답 대기 시간이 길어졌어요.", authentication:"AI 서비스 인증을 확인해야 해요.",
+    rate_limit:"AI 서비스 사용 한도에 도달했어요.", connection:"AI 서비스에 연결하지 못했어요.",
+    provider_error:"AI 서비스가 요청을 처리하지 못했어요.", invalid_response:"AI 응답을 안전하게 사용할 수 없었어요.",
+    configuration:"AI 서비스 설정을 확인해야 해요.", input_limit:"AI에 전송할 요약 크기 한도를 넘었어요.",
+  };
+  const reason=context.fallback_reason;
+  return {title:"규칙 기반 조언",description:reason
+    ? `${reasons[reason]??"AI 응답을 사용할 수 없었어요."} 저장된 기록으로 규칙 기반 대체 조언을 만들었어요.`
+    : "달잠의 정해진 규칙으로 입력 시각과 저장된 기록을 살펴본 조언이에요."};
+}
+
 // Each entry starts with the exact v1 wording, followed by the two actions for styled display.
 const SUGGESTIONS = {
   check_device_record: [
