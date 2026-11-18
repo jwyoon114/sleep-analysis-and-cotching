@@ -128,6 +128,33 @@ class PushPostgresTests(unittest.TestCase):
             self.assertEqual(self.client.post("/web-push/test", headers=headers, json={"id": "a" * 64}).status_code, 503)
             send.assert_not_called()
 
+    def test_production_pilot_only_allows_selected_accounts_without_scheduling(self):
+        postgres_migrate.apply_migrations()
+        pilot = self.register("push-pilot")
+        other = self.register("push-other")
+        account_id = self.client.get("/auth/me", headers=pilot).raise_for_status().json()["user"]["id"]
+        with patch.dict(os.environ, {
+            "DALJAM_ENV": "production",
+            "DALJAM_WEB_PUSH_TEST_ACCOUNT_IDS": account_id,
+            "DALJAM_SCHEDULED_PUSH": "0",
+        }), patch.object(web_push, "_send", return_value=201) as send:
+            state = self.client.get("/web-push", headers=pilot).json()
+            self.assertTrue(state["enabled"] and state["test_enabled"])
+            self.assertFalse(state["scheduled_enabled"])
+            self.assertFalse(self.client.get("/web-push", headers=other).json()["enabled"])
+            payload = enrollment("https://web.push.apple.com/limited-pilot")
+            self.assertEqual(self.client.post("/web-push/subscriptions", headers=other, json=payload).status_code, 503)
+            endpoint_id = self.subscribe(pilot, "limited-pilot")
+            self.assertEqual(self.client.post("/web-push/test", headers=other, json={"id": endpoint_id}).status_code, 503)
+            self.assertEqual(self.client.patch(f"/web-push/subscriptions/{endpoint_id}", headers=pilot,
+                                              json={"enabled": True}).status_code, 503)
+            self.client.post("/web-push/test", headers=pilot, json={"id": endpoint_id}).raise_for_status()
+            self.assertEqual(send.call_count, 1)
+            with patch.dict(os.environ, {"DALJAM_WEB_PUSH_TEST": "0"}):
+                self.assertFalse(self.client.get("/web-push", headers=pilot).json()["enabled"])
+                self.assertEqual(self.client.post("/web-push/test", headers=pilot, json={"id": endpoint_id}).status_code, 503)
+            self.assertEqual(send.call_count, 1)
+
     def test_ownership_cooldown_expiry_logout_and_account_deletion(self):
         postgres_migrate.apply_migrations()
         alice = self.register("push-alice")

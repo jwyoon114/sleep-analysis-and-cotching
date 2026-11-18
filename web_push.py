@@ -63,8 +63,13 @@ def decode_key(value, length):
     return raw
 
 
-def test_enabled():
-    return not is_production() and os.getenv("DALJAM_WEB_PUSH_TEST") == "1"
+def test_enabled(account_id=None):
+    if os.getenv("DALJAM_WEB_PUSH_TEST") != "1":
+        return False
+    if not is_production():
+        return True
+    allowed = os.getenv("DALJAM_WEB_PUSH_TEST_ACCOUNT_IDS", "").split(",")
+    return bool(account_id and account_id in {value.strip() for value in allowed})
 
 
 def job_secret():
@@ -76,8 +81,8 @@ def scheduled_enabled():
     return os.getenv("DALJAM_SCHEDULED_PUSH") == "1" and job_secret() is not None
 
 
-def configuration():
-    if not (test_enabled() or scheduled_enabled()) or not uses_postgres():
+def configuration(account_id=None):
+    if not (test_enabled(account_id) or scheduled_enabled()) or not uses_postgres():
         return None
     key = os.getenv("DALJAM_VAPID_PRIVATE_KEY", "")
     subject = os.getenv("DALJAM_VAPID_SUBJECT", "")
@@ -93,8 +98,8 @@ def configuration():
     return Configuration(key.rstrip("="), base64.urlsafe_b64encode(public).decode().rstrip("="), subject)
 
 
-def require_configuration():
-    config = configuration()
+def require_configuration(account_id=None):
+    config = configuration(account_id)
     if config is None:
         raise PushError(503, "이 환경에서는 Web Push 검증을 사용할 수 없어요.")
     return config
@@ -127,7 +132,7 @@ def _current(row, token_hash, device):
 
 
 def status(account_id, token, device=None):
-    config = configuration()
+    config = configuration(account_id)
     if not uses_postgres():
         return {"enabled": False, "public_key": None, "devices": []}
     token_hash = digest(token)
@@ -144,12 +149,12 @@ def status(account_id, token, device=None):
     ]
     if config is None:
         return {"enabled": False, "public_key": None, "devices": devices}
-    return {"enabled": True, "test_enabled": test_enabled(), "scheduled_enabled": scheduled_enabled(),
+    return {"enabled": True, "test_enabled": test_enabled(account_id), "scheduled_enabled": scheduled_enabled(),
             "public_key": config.public_key, "devices": devices}
 
 
 def subscribe(account_id, token, value, device=None):
-    require_configuration()
+    require_configuration(account_id)
     now = _now()
     expires = datetime.fromtimestamp(value.expirationTime / 1000, timezone.utc) if value.expirationTime is not None else None
     try:
@@ -260,9 +265,9 @@ def _send(subscription, config, *, kind="bedtime-test", ttl=60):
 
 
 def send_test(account_id, token, endpoint_id, device=None):
-    if not test_enabled():
-        raise PushError(503, "테스트 알림은 별도 검증 환경에서만 사용할 수 있어요.")
-    config = require_configuration()
+    if not test_enabled(account_id):
+        raise PushError(503, "이 계정에서는 테스트 알림을 사용할 수 없어요.")
+    config = require_configuration(account_id)
     now = _now()
     token_hash = digest(token)
     cutoff = now - timedelta(minutes=1)

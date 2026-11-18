@@ -109,7 +109,9 @@ export default function WebPushSettings() {
 
   return <>
     <p>브라우저 권한 {permission==="granted"?"허용":permission==="denied"?"차단":"미설정"} · 이 기기 {enrolled?"연결됨":"미연결"}</p>
-    <p className="muted">{settings.scheduled_enabled?"취침 목표 30분 전 알림을 기기별로 받을 수 있어요.":"취침 30분 전 예약 발송은 이 환경에서 꺼져 있어요."}</p>
+    <p className="muted">{settings.scheduled_enabled
+      ?"취침 목표 30분 전을 기준으로 알림을 보내요. 서버나 기기 상태에 따라 늦어지거나 도착하지 않을 수 있어요."
+      :"취침 30분 전 예약 발송은 이 환경에서 꺼져 있어요."}</p>
     {permission==="denied"&&<p className="muted">다시 받으려면 기기나 브라우저의 알림 설정에서 달잠을 허용해 주세요.</p>}
     {!registration&&<p className="muted">브라우저 등록을 기다리고 있어요. 계속 표시되면 인터넷 연결을 확인하고 페이지를 다시 열어 주세요.</p>}
     <div className="plan-actions">
