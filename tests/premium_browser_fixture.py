@@ -33,6 +33,7 @@ def free_port():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("staging", "production"), default="staging")
+    parser.add_argument("--mock-live", action="store_true", help="Exercise the live request path with a mocked SDK")
     args = parser.parse_args()
     pg_bin = os.getenv("DALJAM_TEST_POSTGRES_BIN")
     node = shutil.which("node")
@@ -53,13 +54,19 @@ def main():
         while api_port == web_port:
             web_port = free_port()
         env = {key: value for key, value in os.environ.items()
-               if not key.startswith(("PG", "OPENAI_"))
+               if not key.startswith(("PG", "OPENAI_", "DALJAM_PREMIUM_AI_"))
                and key not in {"DATABASE_URL", "SLEEP_DB_PATH", "DALJAM_PUBLIC_ORIGIN"}}
         env.update(DATABASE_URL=database, SLEEP_DB_BACKEND="postgresql", SLEEP_DESKTOP_ALARMS="0",
                    DALJAM_ENV=args.mode, DALJAM_PREMIUM_DEMO="1", DALJAM_DEMO_ONLY="0", COACHING_ENGINE="openai",
                    COACHING_USER_LIMIT_24H="0", COACHING_GLOBAL_LIMIT_24H="0", HOSTNAME="127.0.0.1",
                    PORT=str(web_port), SLEEP_API_URL=f"http://127.0.0.1:{api_port}", NEXT_TELEMETRY_DISABLED="1",
                    PREMIUM_TEST_ENV=args.mode, DALJAM_PREMIUM_TEST_ORIGIN=f"http://127.0.0.1:{web_port}")
+        if args.mock_live:
+            env.update(DALJAM_PREMIUM_AI_ENABLED="1", OPENAI_API_KEY="synthetic-project-key",
+                       OPENAI_PROJECT_ID="synthetic-dev-project", OPENAI_MODEL="synthetic-model",
+                       DALJAM_PREMIUM_AI_USAGE_DB=str(cluster.root / "premium-ai-usage.sqlite3"),
+                       DALJAM_PREMIUM_AI_MAX_INPUT_TOKENS="8192", DALJAM_PREMIUM_AI_MAX_OUTPUT_TOKENS="512",
+                       PREMIUM_TEST_LIVE_MOCK="1")
         shutil.copytree(WEB / "public", server / "public", dirs_exist_ok=True)
         shutil.copytree(WEB / ".next-production" / "static", server / ".next-production" / "static", dirs_exist_ok=True)
 
@@ -76,16 +83,37 @@ def main():
         # A regression cannot reach a real provider, even if a local secret file exists.
         api_code = f"""
 import coaching_service
+import httpx
+import json
+import os
+from openai import APITimeoutError
+from types import SimpleNamespace
+from unittest.mock import patch
 import uvicorn
 
 def forbid_provider():
     raise AssertionError('External AI is forbidden')
 
 coaching_service.settings = forbid_provider
-uvicorn.run('api:app', host='127.0.0.1', port={api_port}, access_log=False)
+
+def mock_response(**kwargs):
+    data = json.loads(kwargs['input'])
+    if data['selected_record']['start'][11:16] == '22:45':
+        raise APITimeoutError(request=httpx.Request('POST', 'https://api.openai.com/v1/responses'))
+    text = '일정에 맞춰 잠자리에 들 준비를 미리 해 봐.' if data['expression']['speech'] == 'casual' else '일정에 맞춰 잠자리에 들 준비를 미리 해 보세요.'
+    content = {{'suggestions':[{{'text':text,'basis':'timing'}}],'questions':[]}}
+    return SimpleNamespace(status='completed',model='synthetic-model',output_text=json.dumps(content),
+                           usage=SimpleNamespace(input_tokens=1000,output_tokens=100,total_tokens=1100))
+
+with patch('openai.OpenAI') as sdk:
+    if os.getenv('PREMIUM_TEST_LIVE_MOCK') == '1':
+        sdk.return_value.__enter__.return_value.responses.create.side_effect = mock_response
+    else:
+        sdk.side_effect = AssertionError('Real SDK use is forbidden')
+    uvicorn.run('api:app', host='127.0.0.1', port={api_port}, access_log=False)
 """
         api = start([sys.executable, "-B", "-c", api_code], ROOT, f"premium-api-{args.mode}.log", env)
-        web_env = {key: value for key, value in env.items() if key != "DATABASE_URL"}
+        web_env = {key: value for key, value in env.items() if key != "DATABASE_URL" and not key.startswith("OPENAI_")}
         web = start([node, "server.js"], server, f"premium-web-{args.mode}.log", web_env)
         for _ in range(80):
             if api.poll() is not None or web.poll() is not None:

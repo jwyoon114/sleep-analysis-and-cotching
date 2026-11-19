@@ -4,6 +4,8 @@ import { coachingDataNotes, manualCoachingSource, renderCoachingBody } from "../
 import { CHARACTERS, MBTI_TYPES, getCoachingTone } from "../src/lib/coaching-preview.ts";
 
 test("saved manual coaching describes its actual generator and safe fallback reason",()=>{
+  assert.equal(manualCoachingSource({premium_demo_live:{kind:"openai"}}).title,"AI가 실제 수면 기록을 바탕으로 생성한 조언");
+  assert.equal(manualCoachingSource({premium_demo_live:{kind:"rules_fallback"}}).title,"기본 수면 조언 — AI 연결을 사용할 수 없어 대체 제공");
   assert.equal(manualCoachingSource(null),null);
   assert.equal(manualCoachingSource({engine:"rules"}),null);
   assert.equal(manualCoachingSource({engine:"manual-openai"}).title,"OpenAI 기반 조언");

@@ -5,6 +5,7 @@ import {ArrowRight, Check, LoaderCircle, Moon, RotateCcw, Sparkles} from "lucide
 import {api, minutes} from "@/lib/sleep";
 import type {PremiumSample, PremiumStatus} from "@/lib/premium";
 import styles from "./premium-demo.module.css";
+import PremiumLiveCoaching from "./premium-live-coaching";
 
 export function PremiumEntry({onOpen}:{onOpen:()=>void}) {
   return <button type="button" className={styles.entry} onClick={onOpen}>
@@ -14,7 +15,7 @@ export function PremiumEntry({onOpen}:{onOpen:()=>void}) {
   </button>;
 }
 
-export default function PremiumDemo() {
+export default function PremiumDemo({onManualSaved}:{onManualSaved:()=>void}) {
   const [status,setStatus]=useState<PremiumStatus|null>(null);
   const [view,setView]=useState<"intro"|"checkout"|"active">("intro");
   const [ticket,setTicket]=useState("");
@@ -141,9 +142,11 @@ export default function PremiumDemo() {
       <section className={`panel ${styles.demoCard}`}>
         <p className={styles.eyebrow}>모의 결제 완료</p>
         <h2 ref={heading} tabIndex={-1}>프리미엄 시연 활성화</h2>
-        <p>실제 청구 없이 발표용 체험이 활성화됐어요. 새로 요청하는 내 기록 코칭은 계속 무료 규칙 기반으로 제공해요.</p>
+        <p>모의 결제로 발표용 체험이 활성화됐어요. 일반 코칭은 무료 규칙 기반이며, 아래 전용 버튼은 서버의 실제 AI 시연 설정에 따라 동작해요.</p>
         <p className={styles.note}>시연은 초기화·로그아웃·서버 재시작 또는 활성화 후 24시간 경과 시 종료돼요.</p>
       </section>
+      {status&&<PremiumLiveCoaching status={status} onManualSaved={onManualSaved}/>}
+      <details open={!status?.live_ai_available} className={styles.sampleDetails}><summary>샘플 데이터 코칭 예시 보기</summary>
       {sample?<section className={`panel ${styles.sample}`} aria-labelledby="premium-sample-title">
         <h2 id="premium-sample-title"><Sparkles size={21} aria-hidden="true"/>{sample.title}</h2>
         <p className={styles.note}>{sample.notice}</p>
@@ -154,6 +157,7 @@ export default function PremiumDemo() {
         <p className={styles.sampleText}>{sample.coaching}</p>
         <p className={styles.note}>현재 말투는 {sample.expression.speech==="casual"?"반말":"존댓말"}, 강도는 {{gentle:"다정함",firm:"단호함",direct:"강한 직설"}[sample.expression.intensity]}이에요. 마이페이지에서 바꾼 뒤 다시 열어 비교할 수 있어요.</p>
       </section>:<p role="status" className={styles.loading}>샘플 조언을 확인하고 있어요.</p>}
+      </details>
       <button type="button" className="button secondary" disabled={busy} onClick={reset}><RotateCcw size={17}/>시연 초기화 · 무료로 돌아가기</button>
     </>}
   </div>;

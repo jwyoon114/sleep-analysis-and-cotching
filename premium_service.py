@@ -133,7 +133,7 @@ def sample_preview(account_id, db_path=None):
     observation = ("가상 기록의 취침 시각이 날마다 달라. 추정 수면 시간은 입력한 시각의 차이야." if casual
                    else "가상 기록의 취침 시각이 날마다 달라요. 추정 수면 시간은 입력한 시각의 차이예요.")
     return {
-        "title": "AI 코칭 시연 예시", "source": "prepared_sample", "synthetic": True,
+        "title": "AI 코칭 시연 예시 — 샘플 데이터", "source": "prepared_sample", "synthetic": True,
         "model_called": False, "saved_to_history": False, "expression": expression,
         "sample_records": [
             {"label": "가상 기록 A", "bedtime": "23:40", "wake_time": "07:00", "estimated_sleep_minutes": 440},

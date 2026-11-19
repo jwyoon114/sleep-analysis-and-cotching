@@ -101,7 +101,7 @@ class PremiumDemoTests(ManualSleepFixture, unittest.TestCase):
         self.assertIn("no-store", result.headers["cache-control"])
         sample = result.json()
         self.assertEqual(sample["source"], "prepared_sample")
-        self.assertEqual(sample["title"], "AI 코칭 시연 예시")
+        self.assertEqual(sample["title"], "AI 코칭 시연 예시 — 샘플 데이터")
         self.assertTrue(sample["synthetic"])
         self.assertFalse(sample["model_called"])
         self.assertFalse(sample["saved_to_history"])

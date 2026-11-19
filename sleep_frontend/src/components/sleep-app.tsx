@@ -416,7 +416,7 @@ export default function SleepApp() {
     />}
 
     {page==="dashboard"&&!demo&&<PremiumEntry onOpen={()=>navigate("premium")}/>}
-    {page==="premium"&&!demo&&<PremiumDemo key={`premium-${user.id}`}/>}
+    {page==="premium"&&!demo&&<PremiumDemo key={`premium-${user.id}`} onManualSaved={()=>setRevision(value=>value+1)}/>}
     {page==="manualSleep"&&manualDraft&&<ManualSleepForm record={manualDraft.record} onSave={saveManual} onCancel={()=>navigate(manualDraft.from)}/>}
     <div hidden={page!=="records"}><MobileRecordList records={records} loading={loading} onOpen={id=>{setSelected(id);navigate("recordDetail");}} onUpload={openUpload} onCompare={()=>navigate("comparison")}/></div>
     {page==="recordDetail"&&<section className="panel record-detail">{record?.data_type==="manual"?<><div className="panel-heading"><div><h2 className="detail-title">직접 입력한 수면 기록</h2><p>{shortDate(record.start)} {clock(record.start)} – {shortDate(record.end)} {clock(record.end)} · {record.timezone}</p></div></div>

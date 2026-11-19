@@ -46,6 +46,7 @@ try{
     if(event.method==="Network.requestWillBeSent")requests.push(event.params.request.url);
   });
   await send("Page.enable");await send("Runtime.enable");await send("Network.enable");
+  if(process.env.PREMIUM_TEST_LIVE_MOCK==="1")await send("Page.addScriptToEvaluateOnNewDocument",{source:'Object.defineProperty(globalThis.crypto,"randomUUID",{value:undefined,configurable:true});'});
   await send("Network.setBypassServiceWorker",{bypass:true});
   const js=async expression=>{
     const result=await send("Runtime.evaluate",{expression,returnByValue:true,awaitPromise:true});
@@ -92,6 +93,8 @@ try{
   const advice=await checked("coach","POST",{analysis_id:record.record.analysis_id});
   assert.equal(advice.context.engine,"manual-rules");assert.equal(advice.context.fallback_reason,undefined);
   const recordsBefore=await checked("watch/sessions");
+  let expectedRecords=recordsBefore;
+  const mockLive=process.env.PREMIUM_TEST_LIVE_MOCK==="1";
   await send("Page.reload");await visible("추정 수면은 6시간 45분이에요");
   await click("Premium 알아보기");await visible("현재 이용 상태");
   assert.equal(await js('[...document.querySelectorAll("p")].filter(node=>node.textContent==="DALJAM PREMIUM").length'),1);
@@ -103,6 +106,7 @@ try{
     assert.ok(await run(()=>[...document.querySelectorAll("button")].some(button=>button.textContent.includes("모의 결제로 체험하기")&&button.disabled)));
     assert.equal((await api("premium/demo/checkout","POST")).status,403);
     assert.equal((await api("premium/demo/preview")).status,403);
+    assert.equal((await api("premium/demo/coach","POST",{analysis_id:record.record.analysis_id,request_id:"11111111-1111-4111-8111-111111111111"})).status,403);
     await visible("현재 환경에서는 결제 시연을 사용할 수 없어요");
     await run(()=>{[...document.querySelectorAll("h2")].find(node=>node.textContent==="프리미엄 업그레이드 시연").closest("section").id="fixture-demo-intro";});
     await capture("07-production-disabled",390,"#fixture-demo-intro");
@@ -120,8 +124,41 @@ try{
     assert.equal((await checked("premium")).tier,"free");
     await click("모의 결제로 체험하기");await visible("결제 시연을 확인해 주세요");
     await click("","input[type=checkbox]");await click("모의 결제 완료");
-    await visible("프리미엄 시연 활성화");await visible("AI 코칭 시연 예시");
-    const state=await checked("premium");assert.equal(state.tier,"premium_demo");assert.equal(state.paid_entitlement,false);assert.equal(state.live_ai_available,false);
+    await visible("프리미엄 시연 활성화");await visible("내 기록으로 맞춤 조언 받기");
+    const state=await checked("premium");assert.equal(state.tier,"premium_demo");assert.equal(state.paid_entitlement,false);assert.equal(state.live_ai_available,mockLive);
+    if(!mockLive){
+      assert.ok(await run(()=>[...document.querySelectorAll("button")].some(node=>node.textContent.includes("AI 맞춤 조언 생성")&&node.disabled)));
+      assert.equal((await checked("premium/demo/coach","POST",{analysis_id:record.record.analysis_id,request_id:"11111111-1111-4111-8111-111111111111"})).kind,"sample");
+    }
+    if(mockLive){
+      await click("수면 시간 직접 입력");await visible("취침 날짜와 시각");
+      const field=(name,value)=>run((name,value)=>{
+        const input=document.querySelector('input[name="'+name+'"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);
+        input.dispatchEvent(new Event("input",{bubbles:true}));
+      },name,value);
+      await field("start_local","2024-11-17T23:30");await field("end_local","2024-11-18T06:30");await field("timezone","Asia/Seoul");
+      await capture("08-live-manual-input");
+      await click("수면 기록 저장");await until(()=>run(()=>!document.querySelector('input[name="start_local"]')),"manual saved");
+      await until(()=>run(()=>[...document.querySelectorAll("button")].some(node=>node.textContent.includes("AI 맞춤 조언 생성")&&!node.disabled)),"live request button ready");
+      await run(()=>{const button=[...document.querySelectorAll("button")].find(node=>node.textContent.includes("AI 맞춤 조언 생성"));button.click();button.click();});
+      await visible("AI가 실제 수면 기록을 바탕으로 생성한 조언");
+      for(const width of [320,390,430,1280])await viewport(width);
+      assert.equal((await checked("premium")).ai_usage.calls_started,1);
+      await capture("09-live-ai-mocked",390,'h3[tabindex="-1"]');
+      await click("생성 결과 다시 확인");await visible("저장된 동일 요청 결과");
+      assert.equal((await checked("premium")).ai_usage.calls_started,1);
+      await click("수면 시간 직접 입력");await visible("취침 날짜와 시각");
+      await field("start_local","2024-11-18T22:45");await field("end_local","2024-11-19T06:30");await field("timezone","Asia/Seoul");
+      await click("수면 기록 저장");await until(()=>run(()=>!document.querySelector('input[name="start_local"]')),"second manual saved");
+      await click("AI 맞춤 조언 생성");await visible("기본 수면 조언 — AI 연결을 사용할 수 없어 대체 제공");
+      assert.equal((await checked("premium")).ai_usage.calls_started,2);
+      await capture("10-live-fallback-mocked",390,'h3[tabindex="-1"]');
+      expectedRecords=await checked("watch/sessions");
+      console.log("PASS mocked Responses API after manual save, double-click blocking, cached replay, quota accounting and clearly labeled rules fallback");
+      await click("샘플 데이터 코칭 예시 보기","summary");
+    }
+    await visible("AI 코칭 시연 예시 — 샘플 데이터");
     const sample=await checked("premium/demo/preview");assert.equal(sample.source,"prepared_sample");assert.equal(sample.model_called,false);
     assert.equal(sample.expression.speech,"casual");assert.equal(sample.expression.intensity,"firm");
     assert.ok(!sample.coaching.includes("6시간 45분"));
@@ -129,8 +166,10 @@ try{
     await capture("03-demo-active");
     for(const character of ["cat","raccoon","dog","rabbit"]){
       await checked("auth/personalization","PATCH",{mbti:null,speech:"casual",intensity:"firm",allow_profanity:false,character});
-      await send("Page.reload");await visible("추정 수면은 6시간 45분이에요");
-      await click("Premium 알아보기");await visible("AI 코칭 시연 예시");
+      await send("Page.reload");await visible("추정 수면은");
+      await click("Premium 알아보기");await visible("내 기록으로 맞춤 조언 받기");
+      if(mockLive)await click("샘플 데이터 코칭 예시 보기","summary");
+      await visible("AI 코칭 시연 예시");
       assert.equal((await checked("premium/demo/preview")).coaching,sample.coaching);
       await capture("04-sample-"+character,390,"#premium-sample-title");
     }
@@ -139,7 +178,7 @@ try{
     await visible("현재 이용 상태");
     assert.equal((await checked("premium")).tier,"free");
     assert.equal((await api("premium/demo/preview")).status,403);
-    assert.deepEqual(await checked("watch/sessions"),recordsBefore);
+    assert.deepEqual(await checked("watch/sessions"),expectedRecords);
     const saved=await checked("watch/sessions/"+record.record.analysis_id+"/coaching");
     assert.equal(saved.history.length,1);assert.equal(saved.history[0].coaching,advice.coaching);
     await capture("06-reset-free");

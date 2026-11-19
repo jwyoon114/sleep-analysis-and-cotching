@@ -1,7 +1,9 @@
 import type { CoachingTone } from "./coaching-preview";
 
 // Read the persisted generation source, so changing server settings cannot relabel old advice.
-export function manualCoachingSource(context?: {engine?:string; fallback_reason?:string} | null) {
+export function manualCoachingSource(context?: {engine?:string; fallback_reason?:string; premium_demo_live?:{kind:string}} | null) {
+  if(context?.premium_demo_live?.kind==="openai")return {title:"AI가 실제 수면 기록을 바탕으로 생성한 조언",description:"생성 당시의 기록 요약과 서버 저장 개인화 설정을 참고했어요."};
+  if(context?.premium_demo_live?.kind==="rules_fallback")return {title:"기본 수면 조언 — AI 연결을 사용할 수 없어 대체 제공",description:"달잠의 규칙으로 작성한 조언이에요."};
   if(context?.engine==="manual-openai")return {title:"OpenAI 기반 조언",description:"입력한 시각과 기록 요약을 바탕으로 AI가 실천 제안을 작성했어요."};
   if(context?.engine!=="manual-rules")return null;
   const reasons:Record<string,string>={

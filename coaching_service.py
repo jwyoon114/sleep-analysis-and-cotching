@@ -219,23 +219,37 @@ def _window_boundary(records, field, select):
     return select(values)[1] if values else ""
 
 
-def _manual_openai(data):
-    from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
+def request_response(key, model, input_text, *, project=None, max_output_tokens=1400, timeout=45):
+    from openai import OpenAI
 
-    try:
-        key, model = settings()
-    except ValueError:
-        return None, {"fallback_reason": "configuration"}
+    client_options = {"api_key": key, "timeout": timeout, "max_retries": 0}
+    if project:
+        client_options["project"] = project
+        client_options["base_url"] = "https://api.openai.com/v1"
+    with OpenAI(**client_options) as client:
+        return client.responses.create(
+            model=model, instructions=manual_coaching.INSTRUCTIONS, input=input_text,
+            text={"format": manual_coaching.OUTPUT_FORMAT}, max_output_tokens=max_output_tokens, store=False,
+        )
+
+
+def _manual_openai(data, *, requester=None):
+    from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, RateLimitError
+
+    model = None
+    if requester is None:
+        try:
+            key, model = settings()
+        except ValueError:
+            return None, {"fallback_reason": "configuration"}
+        def requester(input_text):
+            return request_response(key, model, input_text)
     input_text = json.dumps(data, ensure_ascii=False)
     input_limit = setting("COACHING_MAX_INPUT_BYTES", 64000)
     if input_limit and len(input_text.encode("utf-8")) > input_limit:
         return None, {"fallback_reason": "input_limit"}
     try:
-        with OpenAI(api_key=key, timeout=45, max_retries=0) as client:
-            response = client.responses.create(
-                model=model, instructions=manual_coaching.INSTRUCTIONS, input=input_text,
-                text={"format": manual_coaching.OUTPUT_FORMAT}, max_output_tokens=1400, store=False,
-            )
+        response = requester(input_text)
         if (getattr(response, "status", None) != "completed"
                 or not isinstance(getattr(response, "output_text", None), str)):
             raise manual_coaching.InvalidManualAdvice()
@@ -299,6 +313,10 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         context = _rule_context(result, session, recent, lifestyle)
         context["expression"] = expression
 
+    return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
+
+
+def save_generated(account_id, session, recent, lifestyle, answer, context, db_path=None, *, coaching_id=None):
     referenced = {s["analysis_id"]: s for s in [session] + recent}
     context.update(
         record_ids=list(referenced),
@@ -308,7 +326,8 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         window_end=_window_boundary(referenced.values(), "end", max),
     )
     created = datetime.now(timezone.utc).isoformat()
-    coaching_id = str(uuid4())
+    coaching_id = coaching_id or str(uuid4())
+    session_id = session["analysis_id"]
     with closing(connect(db_path)) as db, db:
         # Recheck record ownership and availability before saving the answer.
         begin_write(db)
@@ -316,13 +335,16 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         active = db.execute(f"SELECT count(*) FROM sessions WHERE subject=? AND id IN ({placeholders}) AND NOT EXISTS(SELECT 1 FROM trash_sessions WHERE session_id=sessions.id)", (account_id, *referenced)).fetchone()[0]
         if active != len(referenced):
             raise ValueError("참고한 분석 기록이 삭제되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
-        if is_manual_sleep(session):
+        if is_manual_sleep(session) or "premium_demo_live" in context:
             rows = db.execute(f"SELECT id, payload FROM sessions WHERE subject=? AND id IN ({placeholders})",
                               (account_id, *referenced))
             for row in rows:
                 current = json.loads(row["payload"])
                 if manual_coaching.summary(current) != manual_coaching.summary(referenced[row["id"]]):
                     raise ValueError("참고한 수면 기록이 변경되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
+                if ("premium_demo_live" in context and row["id"] == session_id
+                        and current.get("asleep_minutes") != session.get("asleep_minutes")):
+                    raise ValueError("참고한 수면 수치가 변경되어 코칭을 저장하지 못했습니다.")
         db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)", (coaching_id, account_id, session_id, answer, json.dumps(lifestyle, ensure_ascii=False), created))
         db.execute("INSERT INTO coaching_context VALUES(?,?)", (coaching_id, json.dumps(context, ensure_ascii=False)))
     return {"id": coaching_id, "analysis_id": session_id, "coaching": answer, "created_at": created, "context": context}

@@ -14,7 +14,9 @@
 
 시연 권한은 활성화 후 최대 24시간 유지된다. 초기화, 성공한 로그아웃·계정 삭제, 서버 재시작으로 정리된다. 이 시간은 발표용 임시 권한의 수명이다. 여러 서버 프로세스 사이에서는 공유하지 않으므로 발표 환경은 단일 프로세스를 사용한다. 실제 구독 운영에는 별도의 영구 권한 저장과 결제 검증이 필요하다.
 
-시연 계정의 `tier`는 `premium_demo`이며 `paid_entitlement`와 `live_ai_available`는 항상 `false`다. 공통 `coaching_service.generate`는 외부 AI 호출 전에 `has_paid_ai_entitlement`를 확인한다. 현재 이 검증 함수는 항상 `false`를 반환한다. 따라서 서버 엔진 설정이 `openai`여도 무료·시연 계정의 새 코칭은 규칙 기반으로 처리된다. 자동 Health Connect 코칭도 같은 검사를 거친다.
+시연 계정의 `tier`는 `premium_demo`이며 `paid_entitlement`는 항상 `false`다. 공통 `coaching_service.generate`는 외부 AI 호출 전에 `has_paid_ai_entitlement`를 확인한다. 현재 이 검증 함수는 항상 `false`를 반환한다. 따라서 서버 엔진 설정이 `openai`여도 기존 `/coach`와 자동 Health Connect 코칭은 규칙 기반으로 처리된다.
+
+승인된 비운영 환경에서는 별도 `DALJAM_PREMIUM_AI_ENABLED=1` 설정과 개발용 API 프로젝트·사용량 장부를 준비해 전용 `/premium/demo/coach` 경로를 사용할 수 있다. 이 경우 활성 시연 계정의 `live_ai_available`는 `true`다. 기본값은 비활성이다. 활성화 조건·호출 예산·중복 방지는 `docs/premium-live-ai-demo.md`에 정리했다.
 
 ## API
 
@@ -26,6 +28,7 @@
 | `POST /premium/demo/checkout` | 계정별 일회 확인 토큰 발급 |
 | `POST /premium/demo/activate` | `checkout_token`, `acknowledged=true` 확인 후 시연 활성화 |
 | `GET /premium/demo/preview` | 활성 시연 계정에 준비된 샘플 반환 |
+| `POST /premium/demo/coach` | 별도 승인 설정과 시연 권한을 검증해 실제 기록의 AI 요청 또는 명확히 표시된 대체 결과 반환 |
 | `DELETE /premium/demo` | 현재 계정의 시연 초기화 |
 
 권한 없음은 403, 확인 토큰 오류·만료는 409, 알 수 없는 결제 입력 필드는 422로 처리한다. 조회 응답에는 `private, no-store`를 적용한다. 확인 토큰을 로그에 남기지 않는다.

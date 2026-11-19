@@ -68,6 +68,6 @@ AI 정상 응답과 오류 사례는 SDK 모의 객체 또는 실제 SDK에 연�
 
 ### GitHub 통합 전 인계
 
-현재 `deploy/supervisor.py`는 규칙 엔진만 허용하고 `OPENAI_` 환경변수를 자식 서버에 전달하지 않는다. 현재 배포 방식에서는 규칙 기반으로 동작한다. 프리미엄 시연 추가 이후에는 공통 코칭 서비스도 서버 측 실제 유료 권한을 확인한다. 현재 검증 함수는 항상 거부하며 `COACHING_ENGINE=openai`만으로 외부 호출을 활성화할 수 없다. 실제 외부 AI 활성화는 서버 담당자가 결제 검증·기존 키·모델 권한·비용 한도와 운영 실행 정책을 별도로 검토하고 승인해야 한다. 승인된 비운영 환경에서 실제 모델의 구조화 응답·문장 안전성·지연·비용을 검증한 뒤 통합한다. 세부 사항은 `docs/premium-demo.md`를 참고한다.
+현재 `deploy/supervisor.py`는 규칙 엔진만 허용하고 `OPENAI_` 환경변수를 자식 서버에 전달하지 않는다. 현재 배포 방식에서는 규칙 기반으로 동작한다. 일반 코칭의 유료 권한 검증 함수는 항상 거부하며 `COACHING_ENGINE=openai`만으로 외부 호출을 활성화할 수 없다. 별도 비운영 시연 경로 `/premium/demo/coach`는 모의 결제 권한·개발 프로젝트·비용 승인 후 서버 활성화 설정·호출 예산을 검증한다. 기본 비활성이며 실제 모델의 문장 안전성·지연·비용은 승인된 최초 실호출에서 확인해야 한다. 세부 사항은 `docs/premium-demo.md`, `docs/premium-live-ai-demo.md`를 참고한다.
 
-Docker 파일의 변경은 새 `manual_coaching.py`를 런타임 이미지에 포함하는 항목뿐이다. DB/API 계약·APK·Health Connect 브리지·PWA 작업은 변경하지 않는다. 원격 통합 전에는 최신 A안 및 서버 담당 브랜치와 `coaching_service.py`, `sleep-app.tsx`, 코칭 표시 유틸리티와 Docker 복사 목록의 충돌을 확인한다.
+Docker 복사 목록은 수동 코칭·프리미엄 시연 모듈을 포함한다. 기존 앱 DB 스키마와 API 계약, APK·Health Connect 브리지·PWA는 보존한다. 원격 통합 전에는 최신 A안 및 서버 담당 브랜치와 `coaching_service.py`, `sleep-app.tsx`, 코칭 표시 유틸리티와 Docker 복사 목록의 충돌을 확인한다.

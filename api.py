@@ -1,5 +1,6 @@
 """Account-based wearable sleep API. No EEG model is required."""
 from typing import Literal
+from uuid import UUID
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
@@ -11,6 +12,8 @@ from account_personalization import Preferences, get_personalization, save_perso
 import coaching_service
 import morning_plans
 import premium_service
+import premium_live_coaching
+import premium_ai_usage
 import history_service
 import backup_policy
 import sleep_alarms
@@ -69,6 +72,26 @@ class DemoActivationRequest(BaseModel):
     model_config = {"extra": "forbid"}
     checkout_token: str = Field(min_length=20, max_length=128)
     acknowledged: Literal[True]
+
+
+class DemoCoachingRequest(CoachingRequest):
+    model_config = {"extra": "forbid"}
+    request_id: UUID
+
+
+@app.exception_handler(premium_ai_usage.DemoCallLimit)
+async def premium_call_limit(request, error):
+    return JSONResponse(status_code=429, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_ai_usage.DuplicateRequest)
+async def premium_duplicate_request(request, error):
+    return JSONResponse(status_code=409, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_ai_usage.UsageUnavailable)
+async def premium_usage_unavailable(request, error):
+    return JSONResponse(status_code=503, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
 
 
 @app.exception_handler(premium_service.DemoUnavailable)
@@ -391,7 +414,7 @@ def coach(request: CoachingRequest, user=Depends(require_user)):
 @app.get("/premium")
 def premium_status(response: Response, user=Depends(require_user)):
     response.headers["Cache-Control"] = "private, no-store"
-    return premium_service.status(user["id"])
+    return premium_live_coaching.annotate_status(premium_service.status(user["id"]), user["id"])
 
 
 @app.post("/premium/demo/checkout")
@@ -401,7 +424,19 @@ def premium_checkout(user=Depends(require_user)):
 
 @app.post("/premium/demo/activate")
 def premium_activate(request: DemoActivationRequest, user=Depends(require_user)):
-    return premium_service.activate_demo(user["id"], request.checkout_token)
+    return premium_live_coaching.annotate_status(premium_service.activate_demo(user["id"], request.checkout_token), user["id"])
+
+
+@app.post("/premium/demo/coach")
+def premium_generate(request: DemoCoachingRequest, response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        return premium_live_coaching.generate(user["id"], request.analysis_id, str(request.request_id),
+                                             request.model_dump(exclude={"analysis_id", "request_id"}))
+    except LookupError:
+        raise HTTPException(404, "기록을 찾을 수 없습니다.")
+    except CoachingLimitError as error:
+        raise HTTPException(429, str(error))
 
 
 @app.delete("/premium/demo")
