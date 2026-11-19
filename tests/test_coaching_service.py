@@ -305,6 +305,7 @@ class CoachingServiceTests(unittest.TestCase):
         selected = self.add_session("2025-11-14", 420)
         with (
             patch.dict(os.environ, {"COACHING_ENGINE": "openai"}),
+            patch.object(coaching_service, "has_paid_ai_entitlement", return_value=True),
             patch.object(coaching_service, "settings", return_value=("mock-key", "synthetic-model")),
             patch("openai.OpenAI") as sdk,
         ):

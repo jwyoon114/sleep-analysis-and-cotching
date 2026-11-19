@@ -16,6 +16,7 @@ from coaching_free import generate_free_coaching
 from coaching_patterns import _record_day, _timestamp
 from health_records import is_manual_sleep, connect, get_owned_session, list_sessions, overview
 import manual_coaching
+from premium_service import has_paid_ai_entitlement
 from service_limits import reserve_coaching_request, setting
 
 def api_limit_detail(error):
@@ -275,6 +276,8 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     engine = os.getenv("COACHING_ENGINE", "rules").strip().lower()
     if engine not in ("rules", "openai"):
         raise ValueError("서버의 코칭 엔진 설정을 확인하세요.")
+    if not has_paid_ai_entitlement(account_id):
+        engine = "rules"
     history = list_sessions(account_id, db_path)
     if is_manual_sleep(session):
         expression = expression_snapshot(get_personalization(account_id, db_path))

@@ -26,6 +26,8 @@ class ManualCoachingTests(ManualSleepFixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.enterContext(patch.dict(os.environ, {"COACHING_ENGINE": "openai", "COACHING_MAX_INPUT_BYTES": "64000"}))
+        # Exercise the retained provider adapter behind a hypothetical verified paid grant.
+        self.enterContext(patch.object(coaching_service, "has_paid_ai_entitlement", return_value=True))
         self.settings = self.enterContext(patch.object(coaching_service, "settings", return_value=("synthetic-key", "synthetic-model")))
         self.sdk = self.enterContext(patch("openai.OpenAI"))
         self.create = self.sdk.return_value.__enter__.return_value.responses.create

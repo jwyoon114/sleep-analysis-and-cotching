@@ -15,6 +15,7 @@ import {homeSummary} from "@/lib/home-summary";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
 import ManualSleepForm from "./manual-sleep-form";
+import PremiumDemo, {PremiumEntry} from "./premium-demo";
 import MobileProfile from "./mobile-profile";
 import IphoneSleepGuide from "./iphone-sleep-guide";
 import {InstallHelpButton} from "./pwa-install";
@@ -27,7 +28,7 @@ import HealthConnect, {stopNativeHealth, type AndroidConnection} from "./health-
 import CoachingStylePreview, { CoachingAdvice } from "./coaching-style-preview";
 import {CHARACTERS, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
 
-type Page = MainTab | "recordDetail" | "coaching" | "comparison" | "trash" | "accountSettings" | "manualSleep";
+type Page = MainTab | "recordDetail" | "coaching" | "comparison" | "trash" | "accountSettings" | "manualSleep" | "premium";
 type Confirmation = {title:string; description:string; permanent?:boolean; run:()=>Promise<void>};
 type CoachingHistory = {recordId:string; status:"loading"|"ready"|"error"; items:Coaching[]};
 type CoachingRequestState = {recordId:string; kind:"submitting"} | {recordId:string; kind:"error"; status:number|null};
@@ -38,6 +39,7 @@ const titles: Record<Page,[string,string]> = {
   plan:["계획","내일은 더 개운하게."], account:["마이페이지","나만의 달잠을 설정해 보세요."],
   accountSettings:["계정 정보 및 관리",""], trash:["휴지통·백업",""],
   manualSleep:["수면 시간 직접 입력",""],
+  premium:["달잠 Premium","나에게 맞는 코칭을 만나보세요."],
 };
 
 function Mark({small=false}:{small?:boolean}) {return <div className={`brand ${small?"brand-small":""}`}><span className="brand-icon"><Moon size={small?21:24} strokeWidth={1.6}/><i/></span><span>달잠<small>나의 수면 리포트</small></span></div>;}
@@ -381,8 +383,8 @@ export default function SleepApp() {
 
   const recordSelector=<select aria-label="분석할 수면 기록" value={selected} onChange={e=>setSelected(e.target.value)}>{records.map(r=><option key={r.analysis_id} value={r.analysis_id}>{shortDate(r.start)} · {clock(r.start)} · {recordDuration(r)}</option>)}</select>;
 
-  const activeTab:MainTab = page==="manualSleep"?(manualDraft?.from==="recordDetail"?"records":manualDraft?.from==="account"?"account":"dashboard"):page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
-  const backTo:Page|null = page==="manualSleep"?manualDraft?.from??"dashboard":page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
+  const activeTab:MainTab = page==="premium"?"dashboard":page==="manualSleep"?(manualDraft?.from==="recordDetail"?"records":manualDraft?.from==="account"?"account":"dashboard"):page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
+  const backTo:Page|null = page==="premium"?"dashboard":page==="manualSleep"?manualDraft?.from??"dashboard":page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
   const summary=homeSummary(latest,recordsStatus);
   return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page} data-keyboard-open={keyboardOpen||undefined}>
@@ -413,6 +415,8 @@ export default function SleepApp() {
       onManualEntry={demo?undefined:()=>openManual()}
     />}
 
+    {page==="dashboard"&&!demo&&<PremiumEntry onOpen={()=>navigate("premium")}/>}
+    {page==="premium"&&!demo&&<PremiumDemo key={`premium-${user.id}`}/>}
     {page==="manualSleep"&&manualDraft&&<ManualSleepForm record={manualDraft.record} onSave={saveManual} onCancel={()=>navigate(manualDraft.from)}/>}
     <div hidden={page!=="records"}><MobileRecordList records={records} loading={loading} onOpen={id=>{setSelected(id);navigate("recordDetail");}} onUpload={openUpload} onCompare={()=>navigate("comparison")}/></div>
     {page==="recordDetail"&&<section className="panel record-detail">{record?.data_type==="manual"?<><div className="panel-heading"><div><h2 className="detail-title">직접 입력한 수면 기록</h2><p>{shortDate(record.start)} {clock(record.start)} – {shortDate(record.end)} {clock(record.end)} · {record.timezone}</p></div></div>
@@ -487,7 +491,7 @@ export default function SleepApp() {
               {[{name:"age_group",label:"연령 구분",icon:Sun,options:["미입력","성인","미성년자"]},{name:"caffeine",label:"취침 전 6시간 이내 카페인",icon:Coffee,options:["미입력","없음","있음"]},{name:"regularity",label:"평소 취침·기상 시간",icon:Clock3,options:["미입력","대체로 일정함","자주 달라짐"]},{name:"satisfaction",label:"나의 수면 만족도",icon:Moon,options:["미입력","좋음","보통","나쁨"]}].map(({name,label,icon:Icon,options})=>
                 <label key={name}><span><Icon size={16}/>{label}</span><select name={name}>{options.map(o=><option key={o}>{o}</option>)}</select></label>
               )}
-              <div className="soft-info"><ShieldCheck size={15}/><p>기본 조언은 달잠 서버에서 기록과 생활습관을 분석해 생성합니다. 서버에서 OpenAI 방식을 활성화한 경우 기록 요약과 입력이 전송되며 API 사용료가 발생할 수 있어요.{record?.data_type==="manual"&&" AI 응답을 사용할 수 없으면 규칙 기반 대체 조언임을 표시해요."}</p></div>
+              <div className="soft-info"><ShieldCheck size={15}/><p>새 코칭은 달잠의 무료 규칙으로 기록과 입력한 생활습관을 살펴봐요. Premium 발표 시연에서는 준비된 가상 기록과 샘플 조언을 확인할 수 있어요.</p></div>
               {recordNote && <p className="coaching-data-guide">{recordNote}</p>}
               {requestFailure && <div className="error coaching-request-error" role="alert">
                 <strong>조언 요청에 문제가 있었어요</strong>
@@ -506,6 +510,7 @@ export default function SleepApp() {
         </div>
       </> : loading ? <section className="panel coaching-history-state" role="status"><Busy text="수면 기록 불러오는 중"/></section>
         : <section className="panel"><Empty title="코칭의 첫걸음은 나의 기록부터"><p>수면 기록을 추가한 뒤 맞춤 코칭을 받아 보세요.</p><button className="button secondary" onClick={openUpload}><Plus size={16}/>수면 기록 추가</button></Empty></section>}
+      {!demo&&<PremiumEntry onOpen={()=>navigate("premium")}/>}
       <details className="panel coaching-style-settings"><summary>코칭 스타일 미리보기</summary><CoachingStylePreview key={(mbti??"default")+"-"+characterId} mbti={mbti} characterId={characterId}/></details>
     </>}
 
