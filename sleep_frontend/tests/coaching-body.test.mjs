@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { coachingDataNotes, renderCoachingBody } from "../src/lib/coaching-body.ts";
+import { coachingDataNotes, manualCoachingSource, renderCoachingBody } from "../src/lib/coaching-body.ts";
 import { CHARACTERS, MBTI_TYPES, getCoachingTone } from "../src/lib/coaching-preview.ts";
+
+test("saved manual coaching describes its actual generator and safe fallback reason",()=>{
+  assert.equal(manualCoachingSource({premium_demo_live:{kind:"openai"}}).title,"AI가 실제 수면 기록을 바탕으로 생성한 조언");
+  assert.equal(manualCoachingSource({premium_demo_live:{kind:"rules_fallback"}}).title,"기본 수면 조언 — AI 연결을 사용할 수 없어 대체 제공");
+  assert.equal(manualCoachingSource(null),null);
+  assert.equal(manualCoachingSource({engine:"rules"}),null);
+  assert.equal(manualCoachingSource({engine:"manual-openai"}).title,"OpenAI 기반 조언");
+  const rules=manualCoachingSource({engine:"manual-rules"});
+  assert.equal(rules.title,"규칙 기반 조언");
+  assert.doesNotMatch(rules.description,/대체/);
+  for(const reason of ["timeout","authentication","rate_limit","connection","provider_error","invalid_response","configuration","input_limit","unknown-provider-secret"]){
+    const fallback=manualCoachingSource({engine:"manual-rules",fallback_reason:reason});
+    assert.equal(fallback.title,"규칙 기반 조언");
+    assert.match(fallback.description,/규칙 기반 대체/);
+    assert.doesNotMatch(fallback.description,/unknown-provider-secret/);
+  }
+  assert.deepEqual(manualCoachingSource({engine:"manual-rules"}),rules);
+});
 
 // Synthetic examples of v1 payloads and their original rule-engine text.
 const fixtures = {

@@ -1,5 +1,6 @@
 """Apple Watch Markdown import and persistent local sleep history (no EEG inference)."""
-from app_database import table_names
+from app_database import begin_write, table_names
+from contextlib import closing
 import csv
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -10,7 +11,8 @@ import os
 from pathlib import Path
 import re
 import sqlite3
-from zoneinfo import ZoneInfo
+from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from export_times import SHORT, bounds, point
 
 DB_PATH = Path(os.getenv("SLEEP_DB_PATH", str(Path(__file__).parent / "data" / "sleep_records.sqlite3")))
@@ -259,6 +261,90 @@ def import_export(text, filename, subject="apple_watch_owner", db_path=None):
         db.close()
 
 
+class ManualSleepConflict(ValueError):
+    pass
+
+
+def is_manual_sleep(record):
+    return record.get("data_type") == "manual"
+
+
+def _manual_timestamp(value, zone):
+    try:
+        local = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+        candidates = {local.replace(tzinfo=zone, fold=fold).astimezone(timezone.utc) for fold in (0, 1)}
+        valid = [stamp for stamp in candidates if stamp.astimezone(zone).replace(tzinfo=None) == local]
+    except (ValueError, TypeError, OverflowError):
+        raise ValueError("취침·기상 날짜와 시각을 확인해 주세요.") from None
+    if len(valid) != 1:
+        raise ValueError("시간대 변경으로 두 번 나타나거나 존재하지 않는 시각입니다. 다른 시각을 입력해 주세요.")
+    return valid[0]
+
+
+def save_manual_sleep(subject, start_local, end_local, timezone_name, analysis_id=None, db_path=None):
+    """Store a self-reported interval in existing account-owned session storage."""
+    try:
+        zone = ZoneInfo(timezone_name)
+    except (ValueError, ZoneInfoNotFoundError):
+        raise ValueError("올바른 시간대를 입력해 주세요. 예: Asia/Seoul") from None
+    start, end = (_manual_timestamp(value, zone) for value in (start_local, end_local))
+    elapsed = (end - start).total_seconds() / 60
+    if not 0 < elapsed <= 48 * 60:
+        raise ValueError("기상 시각은 취침 이후여야 하며, 기록은 48시간 이하여야 합니다.")
+    if end > datetime.now(timezone.utc):
+        raise ValueError("아직 지나지 않은 기상 시각은 기록할 수 없어요.")
+    with closing(connect(db_path)) as db, db:
+        begin_write(db)
+        rows = db.execute(
+            "SELECT s.id, s.start, s.end, s.payload, t.session_id AS trashed "
+            "FROM sessions s LEFT JOIN trash_sessions t ON t.session_id=s.id WHERE s.subject=?", (subject,),
+        ).fetchall()
+        if analysis_id is not None and not any(
+            row["id"] == analysis_id and row["trashed"] is None and is_manual_sleep(json.loads(row["payload"]))
+            for row in rows
+        ):
+            raise LookupError("수정할 수동 수면 기록을 찾을 수 없어요.")
+        conflicts = []
+        for row in rows:
+            if row["id"] == analysis_id:
+                continue
+            try:
+                other_start, other_end = (datetime.fromisoformat(row[key]) for key in ("start", "end"))
+            except (ValueError, TypeError):
+                continue
+            if other_start.tzinfo is None or other_end.tzinfo is None or not (start < other_end and end > other_start):
+                continue
+            existing = json.loads(row["payload"])
+            manual = is_manual_sleep(existing)
+            if analysis_id is None and manual and start == other_start and end == other_end:
+                if row["trashed"] is not None:
+                    raise ManualSleepConflict("같은 수동 기록이 휴지통에 있어요. 기존 기록을 복원해 주세요.")
+                return {"record": existing, "created": False}
+            if row["trashed"] is None:
+                conflicts.append(manual)
+        if conflicts:
+            message = ("같은 시간대에 저장한 수동 기록이 있어요. 기존 기록을 수정해 주세요." if all(conflicts)
+                       else "같은 시간대에 기기 기록이 있어요. 기존 기록을 확인해 주세요.")
+            raise ManualSleepConflict(message)
+        sid = analysis_id or str(uuid4())
+        start_stamp, end_stamp = (stamp.astimezone(zone).isoformat() for stamp in (start, end))
+        record = {
+            "analysis_id": sid, "subject": subject, "data_type": "manual", "source": "manual",
+            "start": start_stamp, "end": end_stamp, "timezone": timezone_name,
+            "recorded_minutes": elapsed, "estimated_sleep_minutes": elapsed, "asleep_minutes": None,
+            "awake_minutes": None, "unrecorded_minutes": None, "wake_segment_count": None,
+            "stage_minutes": {}, "segments": [], "warnings": [], "vitals_summary": [],
+        }
+        payload = json.dumps(record, ensure_ascii=False)
+        if analysis_id is None:
+            db.execute("INSERT INTO sessions VALUES(?,?,?,?,?)", (sid, subject, start_stamp, end_stamp, payload))
+            db.execute("INSERT INTO session_created VALUES(?,?)", (sid, datetime.now(timezone.utc).isoformat()))
+        else:
+            db.execute('UPDATE sessions SET "start"=?, "end"=?, payload=? WHERE id=? AND subject=?',
+                       (start_stamp, end_stamp, payload, sid, subject))
+    return {"record": record, "created": analysis_id is None}
+
+
 def list_sessions(subject="apple_watch_owner", db_path=None):
     db = connect(db_path)
     try:
@@ -340,6 +426,7 @@ def erase_session_rows(db, analysis_id, subject):
 
 
 def overview(sessions):
+    sessions = [session for session in sessions if not is_manual_sleep(session)]
     days = {}
     for session in sessions:
         day = session["start"][:10]
