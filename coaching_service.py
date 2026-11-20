@@ -2,6 +2,7 @@
 from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 import json
 import os
 import re
@@ -12,7 +13,8 @@ from uuid import uuid4
 
 from account_personalization import get_personalization
 from coaching_expression import DEFAULT_EXPRESSION, expression_snapshot, render_personalized_answer
-from coaching_free import generate_free_coaching
+from coaching_free import generate_free_coaching, session_advice
+import coaching_lifestyle
 from coaching_patterns import _record_day, _timestamp
 from health_records import is_manual_sleep, connect, get_owned_session, list_sessions, overview
 import manual_coaching
@@ -316,6 +318,43 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
 
 
+def generate_free(account_id, session, db_path=None):
+    history = list_sessions(account_id, db_path)
+    recent = manual_coaching.recent_history(session, history)
+    preferences = coaching_lifestyle.preferences(account_id, db_path=db_path)
+    daily = coaching_lifestyle.daily_habits(account_id, session, db_path=db_path)
+    lifestyle = {key: value for key, value in (preferences | daily["habits"]).items() if value is not None}
+    expression = expression_snapshot(get_personalization(account_id, db_path))
+    answer = session_advice(session, recent, lifestyle, expression)
+    data = {"selected_record": _free_record(session), "recent_records": [_free_record(row) for row in recent],
+            "lifestyle": lifestyle, "expression": expression}
+    fingerprint = sha256(json.dumps([data["selected_record"], answer],
+                                   sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    context = {"engine": "manual-rules" if is_manual_sleep(session) else "rules", "model": "규칙 기반",
+               "prompt_version": "session-rules-v1", "expression": expression, "input_summary": data,
+               "free_fingerprint": fingerprint}
+    return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
+
+
+def _free_record(record):
+    return manual_coaching.summary(record) | {key: record.get(key) for key in (
+        "analysis_id", "asleep_minutes", "unrecorded_minutes", "recorded_minutes",
+    )}
+
+
+def public_coaching(item):
+    if item is None:
+        return None
+    context = item.get("context") or {}
+    source = {key: context[key] for key in ("engine", "fallback_reason") if key in context}
+    if isinstance(context.get("premium_demo_live"), dict):
+        source["premium_demo_live"] = {"kind": context["premium_demo_live"].get("kind")}
+    if isinstance(context.get("alarm_schedule"), dict):
+        source["alarm_schedule"] = {key: context["alarm_schedule"].get(key)
+                                    for key in ("bedtime", "wake_time", "timezone", "reason")}
+    return {key: item[key] for key in ("id", "coaching", "created_at")} | {"context": source}
+
+
 def save_generated(account_id, session, recent, lifestyle, answer, context, db_path=None, *, coaching_id=None):
     referenced = {s["analysis_id"]: s for s in [session] + recent}
     context.update(
@@ -331,20 +370,35 @@ def save_generated(account_id, session, recent, lifestyle, answer, context, db_p
     with closing(connect(db_path)) as db, db:
         # Recheck record ownership and availability before saving the answer.
         begin_write(db)
+        fingerprint = context.get("free_fingerprint")
+        if fingerprint:
+            lock = " FOR UPDATE" if getattr(db, "is_postgres", False) else ""
+            db.execute("SELECT id FROM accounts WHERE id=?" + lock, (account_id,)).fetchone()
         placeholders = ",".join("?" for _ in referenced)
         active = db.execute(f"SELECT count(*) FROM sessions WHERE subject=? AND id IN ({placeholders}) AND NOT EXISTS(SELECT 1 FROM trash_sessions WHERE session_id=sessions.id)", (account_id, *referenced)).fetchone()[0]
         if active != len(referenced):
             raise ValueError("참고한 분석 기록이 삭제되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
-        if is_manual_sleep(session) or "premium_demo_live" in context:
-            rows = db.execute(f"SELECT id, payload FROM sessions WHERE subject=? AND id IN ({placeholders})",
+        if fingerprint or is_manual_sleep(session) or "premium_demo_live" in context:
+            rows = db.execute(f"SELECT id, payload FROM sessions WHERE subject=? AND id IN ({placeholders})"
+                              + (lock if fingerprint else ""),
                               (account_id, *referenced))
             for row in rows:
                 current = json.loads(row["payload"])
-                if manual_coaching.summary(current) != manual_coaching.summary(referenced[row["id"]]):
+                summarize = _free_record if fingerprint else manual_coaching.summary
+                if summarize(current) != summarize(referenced[row["id"]]):
                     raise ValueError("참고한 수면 기록이 변경되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
                 if ("premium_demo_live" in context and row["id"] == session_id
                         and current.get("asleep_minutes") != session.get("asleep_minutes")):
                     raise ValueError("참고한 수면 수치가 변경되어 코칭을 저장하지 못했습니다.")
+        if fingerprint:
+            rows = db.execute("""SELECT c.id, c.text AS coaching, c.created_at, ctx.payload AS context
+                FROM coaching c JOIN coaching_context ctx ON ctx.coaching_id=c.id
+                WHERE c.account_id=? AND c.session_id=? AND
+                NOT EXISTS(SELECT 1 FROM trash_coaching WHERE coaching_id=c.id)""", (account_id, session_id))
+            for row in rows:
+                if json.loads(row["context"]).get("free_fingerprint") == fingerprint:
+                    return dict(row) | {"analysis_id": session_id, "context": context, "reused": True}
+            reserve_coaching_request(account_id, db_path, connection=db)
         db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)", (coaching_id, account_id, session_id, answer, json.dumps(lifestyle, ensure_ascii=False), created))
         db.execute("INSERT INTO coaching_context VALUES(?,?)", (coaching_id, json.dumps(context, ensure_ascii=False)))
     return {"id": coaching_id, "analysis_id": session_id, "coaching": answer, "created_at": created, "context": context}

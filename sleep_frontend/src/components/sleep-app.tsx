@@ -1,11 +1,11 @@
 "use client";
 
 import {useCallback, useEffect, useMemo, useRef, useState, type FormEvent} from "react";
-import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, CloudUpload, Coffee, FileJson, FileText, Heart, LoaderCircle, Moon, Plus, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, X} from "lucide-react";
+import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudUpload, FileJson, FileText, Heart, LoaderCircle, Moon, Plus, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, X} from "lucide-react";
 import {api, ApiError, clock, colors, compare, daily, labels, minutes, recordDuration, shortDate, today, type Coaching, type Daily, type ManualSleepInput, type ManualSleepRecord, type SleepRecord, type Trash, type User} from "@/lib/sleep";
 import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
-import {coachingDataNotes,manualCoachingSource} from "@/lib/coaching-body";
+import {manualCoachingSource} from "@/lib/coaching-body";
 import {installPlatform, type InstallPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
@@ -14,6 +14,7 @@ import HomeDataConnection from "./home-data-connection";
 import {homeSummary} from "@/lib/home-summary";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
+import CoachingHabits from "./coaching-habits";
 import ManualSleepForm from "./manual-sleep-form";
 import PremiumDemo, {PremiumEntry} from "./premium-demo";
 import MobileProfile from "./mobile-profile";
@@ -35,7 +36,7 @@ type CoachingRequestState = {recordId:string; kind:"submitting"} | {recordId:str
 const titles: Record<Page,[string,string]> = {
   dashboard:["최근 수면 요약",""],
   records:["기록","나의 수면 기록과 변화를 살펴보세요."],
-  recordDetail:["기록 상세보기",""], coaching:["AI 코칭",""], comparison:["기간별 비교","기기로 기록한 수면 시간을 비교해요."],
+  recordDetail:["기록 상세보기",""], coaching:["수면 코칭",""], comparison:["기간별 비교","기기로 기록한 수면 시간을 비교해요."],
   plan:["계획","내일은 더 개운하게."], account:["마이페이지","나만의 달잠을 설정해 보세요."],
   accountSettings:["계정 정보 및 관리",""], trash:["휴지통·백업",""],
   manualSleep:["수면 시간 직접 입력",""],
@@ -240,7 +241,6 @@ export default function SleepApp() {
   const requestInFlight=activeRequest?.kind==="submitting";
   const requestFailure=activeRequest?.kind==="error" ? activeRequest : null;
   const savedDate=saved ? coachingDate(saved.created_at) : null;
-  const savedNotes=saved && page==="coaching" ? coachingDataNotes(saved.coaching,saved.context) : [];
   const manualSource=manualCoachingSource(saved?.context);
   let recordNote="";
   if(record&&record.data_type!=="manual"){
@@ -253,22 +253,18 @@ export default function SleepApp() {
 
   function reloadCoachingHistory(){setCoachingRevision(n=>n+1);}
 
-  async function requestCoaching(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();
-    if(busy||coachLoading||!record)return;
+  async function requestCoaching(recordId:string){
     if(demo){setNotice("체험 모드예요. 로그인하면 내 수면 기록으로 조언을 요청할 수 있어요.");return;}
-    const recordId=record.analysis_id;
-    const lifestyle=Object.fromEntries(new FormData(event.currentTarget));
     setBusy(true);
     setError("");
     setCoachRequest({recordId,kind:"submitting"});
     try{
-      const result=await api<Pick<Coaching,"id">>("coach","POST",{analysis_id:recordId,...lifestyle});
+      const result=await api<Pick<Coaching,"id"> & {reused:boolean}>("coach/free","POST",{analysis_id:recordId});
       if(typeof result?.id!=="string"||!result.id)throw new Error("Invalid coaching response");
       setCoachingId(result.id);
       setCoachRequest(null);
       setRevision(n=>n+1);
-      setNotice("새 수면 조언을 저장했어요.");
+      setNotice(result.reused?"이미 저장된 수면 조언을 열었어요.":"새 수면 조언을 저장했어요.");
     }catch(error){
       if(error instanceof ApiError&&error.status===401){reset();setError(error.message);return;}
       setCoachRequest({recordId,kind:"error",status:error instanceof ApiError?error.status:null});
@@ -305,8 +301,10 @@ export default function SleepApp() {
       setSelected(saved.analysis_id);
       setRevision(n=>n+1);
       setManualDraft(null);
-      navigate("recordDetail");
-      setNotice(id?"수동 수면 기록을 수정했어요.":result.created?"수동 수면 기록을 저장했어요.":"이미 저장된 수동 기록을 열었어요.");
+      navigate("coaching");
+      setCoachingBack("recordDetail");
+      setNotice(id?"수동 수면 기록을 수정했어요.":"수동 수면 기록을 저장했어요.");
+      await requestCoaching(saved.analysis_id);
     }catch(error){
       if(error instanceof ApiError&&error.status===401){reset();setError(error.message);return;}
       throw error;
@@ -427,7 +425,7 @@ export default function SleepApp() {
         <button type="button" className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>이 기록으로 코칭 받기</button>
         <button type="button" className="text-button danger" disabled={busy} onClick={()=>ask("수동 기록을 휴지통으로 옮길까요?","이 기록과 연결된 코칭을 30일 안에 복원할 수 있어요.",async()=>{await api(`watch/sessions/${record.analysis_id}`,"DELETE");setRevision(n=>n+1);navigate("records");})}><Trash2 size={15}/>기록 삭제</button>
       </div>
-    </>:record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>실제 수면 시간</span><strong>{minutes(stageBreakdown?.sleepMinutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3>{stageBreakdown&&<StageChart breakdown={stageBreakdown}/>}<details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions">{(record.coaching_count>0||demo)&&<button className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>이날의 코칭 보기</button>}<button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 AI 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
+    </>:record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>실제 수면 시간</span><strong>{minutes(stageBreakdown?.sleepMinutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3>{stageBreakdown&&<StageChart breakdown={stageBreakdown}/>}<details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions"><button className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>{record.coaching_count>0?"이날의 코칭 보기":"이날의 무료 코칭 받기"}</button><button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
 
     <div hidden={page!=="account"}>
       <MobileProfile username={user.username} preferences={demo ? <>
@@ -465,33 +463,22 @@ export default function SleepApp() {
                   {manualSource&&<div className="coaching-data-guide" aria-label="코칭 생성 방식">
                     <strong>{manualSource.title}</strong><p>{manualSource.description}</p>
                   </div>}
-                  <div className="coaching-data-guide">
-                    <strong>조언을 만들 때 참고한 기록</strong>
-                    <p>{saved.context?.prompt_version==="manual-rules-v1"?"저장된 조언은 생성 당시의 수면 기록을 기준으로 해요.":"저장된 조언은 생성 당시의 수면 기록과 생활습관 입력을 기준으로 해요."}</p>
-                    {savedNotes.length>0 && <ul>{savedNotes.map(note=><li key={note}>{note}</li>)}</ul>}
-                  </div>
+                  {!manualSource && saved.context?.engine==="rules" && <p className="coach-timestamp">규칙 기반 조언</p>}
+                  <p className="coach-timestamp">이번 조언은 생성 당시 저장된 수면 기록을 참고했어요.</p>
                   {savedDate && <div className="coach-timestamp"><Sparkles size={13}/><span><time dateTime={saved.created_at}>{savedDate}</time>에 생성</span></div>}
                 </>}
                 <CoachingAdvice body={saved.coaching} characterId={characterId}/>
-                <details><summary>생성 근거와 생활습관 보기<ChevronDown size={16}/></summary>
-                  {saved.context?<><p>모델: {saved.context.model}<br/>지침: {saved.context.prompt_version}<br/>참고 기록: {saved.context.record_count}회</p><pre>{JSON.stringify(saved.context.input_summary,null,2)}</pre></>:<p className="muted">이 코칭의 생성 근거는 저장되어 있지 않습니다.</p>}
-                  {saved.lifestyle&&<div className="lifestyle-summary">{Object.entries(saved.lifestyle).map(([k,v])=><span key={k}>{({age_group:"연령",caffeine:"카페인",regularity:"규칙성",satisfaction:"만족도"} as Record<string,string>)[k]||k}: {v}</span>)}</div>}
-                </details>
                 <button className="text-button danger" disabled={busy} onClick={()=>ask("이 코칭을 삭제할까요?","선택한 코칭만 휴지통으로 옮깁니다. 수면 분석 기록은 유지됩니다.",async()=>{await api(`watch/sessions/${selected}/coaching/${saved.id}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={14}/>선택한 코칭 삭제</button>
               </> : <div className="coaching-history-state">
                 <Sparkles size={23} aria-hidden="true"/>
                 <h3>아직 저장된 조언이 없어요</h3>
-                <p>{requestFailure ? "요청 안내를 확인한 뒤 필요하면 조언을 다시 요청해 주세요." : record?.data_type==="manual" ? "입력한 수면 기록으로 첫 조언을 받아 보세요." : "생활습관을 선택하고 ‘나에게 맞는 코칭 생성’을 눌러 첫 조언을 받아 보세요."}</p>
+                <p>{requestFailure ? "요청 안내를 확인한 뒤 필요하면 조언을 다시 요청해 주세요." : record?.data_type==="manual" ? "입력한 수면 기록으로 첫 조언을 받아 보세요." : "저장된 수면 기록으로 첫 조언을 받아 보세요."}</p>
               </div>}
-            <p className="disclaimer">AI 코칭은 생활습관 참고용입니다. 질환의 진단이나 치료를 대신하지 않습니다.</p>
+            <p className="disclaimer">수면 코칭은 생활습관 참고용입니다. 질환의 진단이나 치료를 대신하지 않습니다.</p>
           </section>
           <section className="panel coach-form-panel">
-            <div className="panel-heading"><div><h2>{record?.data_type==="manual"?"수동 기록으로 코칭 받기":"오늘의 나를 알려주세요"}</h2><p>{record?.data_type==="manual"?"입력한 시각과 선택한 생활습관으로 반복하기 쉬운 습관을 찾아봐요. 생활습관은 미입력으로 두어도 괜찮아요.":"입력한 생활습관을 코칭에 참고해요."}</p></div></div>
-            <form onSubmit={requestCoaching}>
-              {[{name:"age_group",label:"연령 구분",icon:Sun,options:["미입력","성인","미성년자"]},{name:"caffeine",label:"취침 전 6시간 이내 카페인",icon:Coffee,options:["미입력","없음","있음"]},{name:"regularity",label:"평소 취침·기상 시간",icon:Clock3,options:["미입력","대체로 일정함","자주 달라짐"]},{name:"satisfaction",label:"나의 수면 만족도",icon:Moon,options:["미입력","좋음","보통","나쁨"]}].map(({name,label,icon:Icon,options})=>
-                <label key={name}><span><Icon size={16}/>{label}</span><select name={name}>{options.map(o=><option key={o}>{o}</option>)}</select></label>
-              )}
-              <div className="soft-info"><ShieldCheck size={15}/><p>새 코칭은 달잠의 무료 규칙으로 기록과 입력한 생활습관을 살펴봐요. Premium 발표 시연에서는 준비된 가상 기록과 샘플 조언을 확인할 수 있어요.</p></div>
+            <div className="panel-heading"><div><h2>오늘의 나를 알려주세요</h2><p>생활습관 정보는 선택사항이에요. 입력하지 않아도 수면 기록을 바탕으로 조언을 받을 수 있어요.</p></div></div>
+            {!demo && record && <CoachingHabits key={accountId+":"+record.analysis_id} recordId={record.analysis_id} busy={busy}/>}
               {recordNote && <p className="coaching-data-guide">{recordNote}</p>}
               {requestFailure && <div className="error coaching-request-error" role="alert">
                 <strong>조언 요청에 문제가 있었어요</strong>
@@ -502,10 +489,9 @@ export default function SleepApp() {
                     : "결과를 확인하지 못했어요. 저장된 조언을 다시 불러와 확인한 뒤 필요하면 다시 요청해 주세요."}</p>
                 {requestFailure.status!==429 && requestFailure.status!==404 && <button type="button" className="text-button" disabled={busy||coachLoading} onClick={reloadCoachingHistory}>저장된 조언 다시 불러오기</button>}
               </div>}
-              <button type="submit" className="button primary full" disabled={busy||coachLoading||!record}>
-                {requestInFlight ? <Busy text="코칭을 작성하고 있어요"/> : <><Sparkles size={17}/>{requestFailure ? "조언 다시 요청하기" : "나에게 맞는 코칭 생성"}</>}
+              <button type="button" className="button primary full" disabled={busy||coachLoading||!record} onClick={()=>record&&void requestCoaching(record.analysis_id)}>
+                {requestInFlight ? <Busy text="코칭을 작성하고 있어요"/> : <><Sparkles size={17}/>{requestFailure ? "조언 다시 요청하기" : "무료 코칭 생성"}</>}
               </button>
-            </form>
           </section>
         </div>
       </> : loading ? <section className="panel coaching-history-state" role="status"><Busy text="수면 기록 불러오는 중"/></section>
@@ -552,7 +538,7 @@ export default function SleepApp() {
             <button className="button primary full" disabled={!file||busy} onClick={importFile}>
               {busy?<Busy text="수면 기록을 분석하고 있어요"/>:<><Sparkles size={17}/>분석하고 내 기록에 저장</>}
             </button>
-            <p className="disclaimer">분석·저장은 AI 코칭을 자동으로 요청하지 않습니다.</p>
+            <p className="disclaimer">저장한 기록의 상세에서 무료 코칭을 요청할 수 있어요.</p>
           </>}
       </section>
     </div>}

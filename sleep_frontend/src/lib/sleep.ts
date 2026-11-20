@@ -15,7 +15,7 @@ export type SleepRecord = ManualSleepRecord | (SleepRecordBase & {
   data_type?:"wearable"; asleep_minutes:number; awake_minutes:number; unrecorded_minutes:number; wake_segment_count:number;
 });
 export type ManualSleepInput = {start_local:string; end_local:string; timezone:string};
-export type Coaching = {id: string; coaching: string; created_at: string; lifestyle?: Record<string,string>; context?: {engine?: string; fallback_reason?:string; premium_demo_live?:{kind:string}; presentation?: unknown; model: string; record_count: number; prompt_version: string; window_start: string; window_end: string; input_summary: unknown; alarm_schedule?: {bedtime:string|null;wake_time:string|null;timezone:string;reason:string}} | null};
+export type Coaching = {id: string; coaching: string; created_at: string; context?: {engine?: string; fallback_reason?:string; premium_demo_live?:{kind:string}; alarm_schedule?: {bedtime:string|null;wake_time:string|null;timezone:string;reason:string}} | null};
 export type Trash = {sessions: {id: string; deleted_at: string; expires_at: string; record: SleepRecord}[]; coaching: {id: string; coaching: string; expires_at: string; parent_in_trash: boolean}[]};
 export type Daily = {date: string; asleep_minutes: number | null; awake_minutes: number | null; session_count: number};
 export type Period = {start: string; end: string; session_count: number; recorded_days: number; average_asleep_minutes_per_recorded_day: number | null; average_awake_minutes_per_recorded_day: number | null; daily: Daily[]};

@@ -48,7 +48,7 @@ def main():
         database = cluster.url(cluster.new_database())
         # The sole DB URL comes from the disposable loopback fixture.
         os.environ["DATABASE_URL"] = database
-        assert apply_migrations() == (1, 2, 3, 4, 5, 6)
+        assert apply_migrations() == (1, 2, 3, 4, 5, 6, 7)
         assert apply_migrations() == ()
         api_port, web_port = free_port(), free_port()
         while api_port == web_port:

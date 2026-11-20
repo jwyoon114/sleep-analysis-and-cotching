@@ -147,7 +147,7 @@ class PostgresSchemaTests(unittest.TestCase):
         self.assertEqual(self.manifest["format_version"], 1)
         self.assertEqual(self.manifest["dialect"], "postgresql")
         self.assertEqual(self.manifest["schema"], "public")
-        self.assertEqual([entry["version"] for entry in self.manifest["migrations"]], [1, 2, 3, 4, 5, 6])
+        self.assertEqual([entry["version"] for entry in self.manifest["migrations"]], [1, 2, 3, 4, 5, 6, 7])
         self.assertEqual(self.entry["version"], 1)
         self.assertEqual(self.entry["file"], "0001_initial_schema.sql")
         self.assertEqual(self.entry["application_tables"], 20)

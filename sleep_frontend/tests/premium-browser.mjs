@@ -110,6 +110,56 @@ try{
     await visible("현재 환경에서는 결제 시연을 사용할 수 없어요");
     await run(()=>{[...document.querySelectorAll("h2")].find(node=>node.textContent==="프리미엄 업그레이드 시연").closest("section").id="fixture-demo-intro";});
     await capture("07-production-disabled",390,"#fixture-demo-intro");
+    await send("Page.navigate",{url:origin});
+    await click("수면 시간 직접 입력");
+    await visible("취침 날짜와 시각");
+    const field=(name,value)=>run((name,value)=>{
+      const input=document.querySelector('input[name="'+name+'"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);
+      input.dispatchEvent(new Event("input",{bubbles:true}));
+    },name,value);
+    await field("start_local","2024-11-20T23:30");
+    await field("end_local","2024-11-21T06:45");
+    await field("timezone","Asia/Seoul");
+    await click("수면 기록 저장");
+    await visible("약 7시간 15분");
+    await visible("생활습관 정보는 선택사항이에요.");
+    const {sessions:entries}=await checked("watch/sessions");
+    const first=entries.find(entry=>entry.start.includes("2024-11-20"));
+    const history=await checked("watch/sessions/"+first.analysis_id+"/coaching");
+    assert.equal(history.history.length,1);
+    assert.ok(!JSON.stringify(history).includes("input_summary"));
+    assert.ok(await run(()=>!document.querySelector('article[aria-label="수면 조언"] pre')));
+    assert.ok(await js('![...document.querySelectorAll("h3")].some(node=>node.textContent==="수면 패턴")'));
+    await click("생활습관과 평소 설정","summary");
+    await visible("날짜별 입력 저장");
+    for(const width of [320,390,430])await viewport(width);
+    await capture("11-free-coaching-mobile");
+    await click("무료 코칭 생성");
+    await visible("이미 저장된 수면 조언을 열었어요.");
+    assert.equal((await checked("watch/sessions/"+first.analysis_id+"/coaching")).history.length,1);
+    const uploaded=await run(async()=>{
+      const start="2024-11-22T23:00:00+09:00",end="2024-11-23T04:39:50+09:00";
+      const data={schema_version:1,timezone:"Asia/Seoul",source:"synthetic-watch",
+        sessions:[{start,end,segments:[{stage:"core",start,end}]}]};
+      const form=new FormData();
+      form.set("file",new File([JSON.stringify(data)],"synthetic.json",{type:"application/json"}));
+      const response=await fetch("/api/sleep/analyze",{method:"POST",body:form});
+      return {status:response.status,body:await response.json()};
+    });
+    assert.equal(uploaded.status,200);
+    await send("Page.reload");
+    await visible("수면 시간 직접 입력");
+    await click("코칭",".dashboard-link");
+    await visible("무료 코칭 생성");
+    await run(id=>{
+      const select=document.querySelector('select[aria-label="분석할 수면 기록"]');
+      select.value=id;
+      select.dispatchEvent(new Event("change",{bubbles:true}));
+    },uploaded.body.analysis_ids[0]);
+    await click("무료 코칭 생성");
+    await visible("약 5시간 40분");
+    console.log("PASS free manual auto-coaching, JSON upload coaching, privacy, deduplication and mobile 320/390/430");
     console.log("PASS Chrome production mode rejects demo grants even with flag=1; free manual coaching and premium introduction remain available");
   }else{
     await js('localStorage.setItem("premium","true")');

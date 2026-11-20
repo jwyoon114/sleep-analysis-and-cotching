@@ -189,10 +189,9 @@ def auto_advice(account, ids):
             connection=db.execute('SELECT auto_coach FROM health_connections WHERE account_id=?',(account,)).fetchone()
             if not connection or not connection['auto_coach']: return
             if not db.execute('INSERT INTO health_advice_jobs VALUES(?,?) ON CONFLICT DO NOTHING',(account,newest['analysis_id'])).rowcount: return
-        # generate() applies the existing account/global limits and ownership checks.
-        coaching_service.generate(account,newest['analysis_id'],{'caffeine':'미입력','regularity':'미입력','satisfaction':'미입력','age_group':'미입력'})
-        message='최신 기록의 AI 조언을 저장했어요.'
+        coaching_service.generate_free(account, newest)
+        message='최신 기록의 무료 수면 조언을 저장했어요.'
     except Exception:
-        message='기록은 저장했지만 AI 조언을 만들지 못했어요. AI 코칭 화면에서 다시 요청할 수 있어요.'
+        message='기록은 저장했지만 수면 조언을 만들지 못했어요. 코칭 화면에서 다시 요청할 수 있어요.'
     with closing(database()) as db,db:
         db.execute('UPDATE health_connections SET advice_status=? WHERE account_id=?',(message,account))

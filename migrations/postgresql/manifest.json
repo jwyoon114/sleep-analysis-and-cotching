@@ -33,6 +33,11 @@
       "version": 6,
       "file": "0006_scheduled_web_push.sql",
       "sha256": "48900df02b9fc257690f49911871446ffa29385b0fe5841a7cd39a50a85e72cf"
+    },
+    {
+      "version": 7,
+      "file": "0007_coaching_habits.sql",
+      "sha256": "c0006c548f968810de8fa1a29c5221109da61f871754cce5e3106ac7cdac1925"
     }
   ]
 }

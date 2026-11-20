@@ -9,7 +9,7 @@ export const maxDuration = 60;
 const COOKIE = "sleep_session";
 const PUSH_DEVICE = "sleep_push_installation";
 const LIMIT = 4 * 1024 * 1024 + 64 * 1024;
-const allowed = /^(?:health|premium(?:\/demo(?:\/(?:checkout|activate|preview|coach))?)?|plans(?:\/(?:bedtime|morning-view|\d{4}-\d{2}-\d{2}))?|web-push(?:\/test|\/subscriptions(?:\/[a-f0-9]{64})?)?|alarms(?:\/test)?|auth\/(?:register|login|logout|me|personalization)|analyze|coach|watch\/(?:health\/connection|import|manual-sessions(?:\/[a-zA-Z0-9_-]+)?|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
+const allowed = /^(?:health|premium(?:\/demo(?:\/(?:checkout|activate|preview|coach))?)?|plans(?:\/(?:bedtime|morning-view|\d{4}-\d{2}-\d{2}))?|web-push(?:\/test|\/subscriptions(?:\/[a-f0-9]{64})?)?|alarms(?:\/test)?|auth\/(?:register|login|logout|me|personalization)|analyze|coach(?:\/(?:free|preferences|habits\/[a-zA-Z0-9_-]+))?|watch\/(?:health\/connection|import|manual-sessions(?:\/[a-zA-Z0-9_-]+)?|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
 
 async function handler(request: NextRequest, context: {params: Promise<{path: string[]}>}) {
   if (isDemoOnly()) return demoBlockedResponse();
@@ -35,6 +35,7 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
     if (!["http:", "https:"].includes(base.protocol)) throw new Error("Invalid backend URL");
     const url = new URL(`${base.pathname.replace(/\/$/, "")}/${endpoint}`, base.origin);
     url.search = request.nextUrl.search;
+    if (endpoint === "coach" || endpoint.endsWith("/coaching")) url.searchParams.set("view", "summary");
     const headers = new Headers();
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("Content-Type", contentType);

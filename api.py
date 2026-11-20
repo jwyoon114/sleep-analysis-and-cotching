@@ -12,6 +12,7 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
 from account_personalization import Preferences, get_personalization, save_personalization
 import coaching_service
+import coaching_lifestyle
 import morning_plans
 import premium_service
 import premium_live_coaching
@@ -403,9 +404,11 @@ def watch_session(analysis_id: str, user=Depends(require_user)):
 
 
 @app.get("/watch/sessions/{analysis_id}/coaching")
-def saved_coaching(analysis_id: str, user=Depends(require_user)):
+def saved_coaching(analysis_id: str, view: Literal['summary'] | None = None, user=Depends(require_user)):
     watch_session(analysis_id, user)
     records = coaching_service.list_coaching(user["id"], analysis_id)
+    if view == "summary":
+        records = [coaching_service.public_coaching(item) for item in records]
     return {"result": records[0] if records else None, "history": records}
 
 
@@ -455,11 +458,44 @@ def backup_status(user=Depends(require_user)):
     return backup_policy.maintain_backups()
 
 
+@app.get("/coach/preferences")
+def coaching_preferences(user=Depends(require_user)):
+    return coaching_lifestyle.preferences(user["id"])
+
+
+@app.patch("/coach/preferences")
+def update_coaching_preferences(settings: coaching_lifestyle.Preferences, user=Depends(require_user)):
+    return coaching_lifestyle.preferences(user["id"], settings)
+
+
+@app.get("/coach/habits/{analysis_id}")
+def coaching_habits(analysis_id: str, user=Depends(require_user)):
+    return coaching_lifestyle.daily_habits(user["id"], watch_session(analysis_id, user))
+
+
+@app.patch("/coach/habits/{analysis_id}")
+def update_coaching_habits(analysis_id: str, settings: coaching_lifestyle.DailyHabits, user=Depends(require_user)):
+    return coaching_lifestyle.daily_habits(user["id"], watch_session(analysis_id, user), settings)
+
+
+@app.post("/coach/free")
+def free_coach(request: CoachingRequest, user=Depends(require_user)):
+    session = watch_session(request.analysis_id, user)
+    try:
+        result = coaching_service.generate_free(user["id"], session)
+    except CoachingLimitError as error:
+        raise HTTPException(429, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+    return coaching_service.public_coaching(result) | {"reused": result.get("reused", False)}
+
+
 @app.post("/coach")
-def coach(request: CoachingRequest, user=Depends(require_user)):
+def coach(request: CoachingRequest, view: Literal['summary'] | None = None, user=Depends(require_user)):
     watch_session(request.analysis_id, user)
     try:
-        return coaching_service.generate(user["id"], request.analysis_id, request.model_dump(exclude={"analysis_id"}))
+        result = coaching_service.generate(user["id"], request.analysis_id, request.model_dump(exclude={"analysis_id"}))
+        return coaching_service.public_coaching(result) if view == "summary" else result
     except RateLimitError as error:
         raise HTTPException(429, coaching_service.api_limit_detail(error))
     except APIConnectionError:

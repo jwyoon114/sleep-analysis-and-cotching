@@ -249,7 +249,7 @@ class CoachingServiceTests(unittest.TestCase):
         saved = coaching_service.list_coaching(self.user["id"], synced["analysis_ids"][0])
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["context"]["engine"], "rules")
-        self.assertEqual(saved[0]["context"]["presentation"]["version"], 1)
+        self.assertEqual(saved[0]["context"]["prompt_version"], "session-rules-v1")
         self.assertEqual(saved[0]["context"]["expression"]["speech"], "casual")
         self.assertEqual(saved[0]["context"]["expression"]["intensity"], "direct")
         self.assertFalse(saved[0]["context"]["expression"]["allow_profanity"])
