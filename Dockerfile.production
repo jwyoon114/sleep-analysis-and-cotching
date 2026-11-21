@@ -15,7 +15,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 SLEEP_DB_BACKEND=postgresql COACHING_ENGINE=rules \
     SLEEP_DESKTOP_ALARMS=0 SLEEP_API_URL=http://127.0.0.1:8011 PORT=10000 \
-    DALJAM_DEMO_ONLY=0 DALJAM_ENV=production
+    DALJAM_DEMO_ONLY=0 DALJAM_ENV=production DALJAM_SCHEDULED_PUSH=0 DALJAM_WEB_PUSH_TEST=0
 COPY requirements-server.txt requirements-postgres.txt ./
 RUN pip install --no-cache-dir -r requirements-server.txt \
     && groupadd --gid 10001 daljam && useradd --uid 10001 --gid daljam --create-home daljam

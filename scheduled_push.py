@@ -4,6 +4,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 import hmac
+import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from health_records import connect
@@ -143,7 +144,7 @@ def _dispatch(claim, config, clock):
     return state
 
 
-def run(config, *, clock=web_push._now):
+def run(config, *, clock=web_push._now, should_stop=None):
     now = clock()
     with closing(connect()) as db, db:
         db.execute("DELETE FROM web_push_subscriptions WHERE expires_at<=?", (now,))
@@ -156,6 +157,8 @@ def run(config, *, clock=web_push._now):
     selected = [row["endpoint_id"] for row in devices if due_now(row, now)]
     totals = {"due": len(selected), "claimed": 0, "sent": 0, "retry": 0, "failed": 0, "uncertain": 0, "cancelled": 0}
     for endpoint_id in selected:
+        if should_stop is not None and should_stop():
+            break
         claim = _claim(endpoint_id, clock())
         if claim:
             totals[_dispatch(claim, config, clock)] += 1
@@ -172,3 +175,48 @@ def run_authorized(credentials):
     if credentials is None or not hmac.compare_digest(credentials.encode(), secret.encode()):
         raise web_push.PushError(403, "작업 인증을 확인해 주세요.")
     return run(web_push.require_configuration())
+
+
+def worker_loop(config, stop, *, interval=30):
+    """Use the existing DB claims; stop between batches and before new claims."""
+    import sys
+    while not stop.is_set():
+        try:
+            result = run(config, should_stop=stop.is_set)
+            fields = ("due", "claimed", "sent", "retry", "failed", "uncertain", "cancelled")
+            counts = {key: result[key] for key in fields
+                      if type(result.get(key)) is int}
+            if counts.get("due", 0) > 0:
+                print("Scheduled push counts: " + json.dumps(counts, sort_keys=True), flush=True)
+        except Exception:
+            # Provider endpoints, keys and DB credentials must never enter logs.
+            print("Scheduled push cycle failed; retrying next interval.", file=sys.stderr, flush=True)
+        stop.wait(interval)
+
+
+def worker_main():
+    import os
+    import signal
+    import sys
+    from threading import Event
+    if os.getenv("DALJAM_SCHEDULED_PUSH") != "1":
+        return 0
+    try:
+        if not web_push.scheduled_enabled():
+            raise ValueError
+        config = web_push.require_configuration()
+    except Exception:
+        print("Scheduled push configuration is unavailable.", file=sys.stderr, flush=True)
+        return 1
+    stop = Event()
+    previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        worker_loop(config, stop)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(worker_main())

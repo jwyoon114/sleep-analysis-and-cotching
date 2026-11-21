@@ -47,6 +47,17 @@ def run(commands, env, cwd=ROOT, grace=20):
     return code
 
 
+def production_commands(env):
+    commands = [
+        [sys.executable, "-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8011",
+         "--timeout-graceful-shutdown", "15", "--no-access-log"],
+        ["node", str(ROOT / "web/server.js")],
+    ]
+    if env.get("DALJAM_SCHEDULED_PUSH") == "1":
+        commands.append([sys.executable, "-m", "scheduled_push"])
+    return commands
+
+
 def main():
     sys.path.insert(0, str(ROOT))
     from production_policy import check_configuration
@@ -75,11 +86,7 @@ def main():
     except Exception:
         print('PostgreSQL migration verification failed; service was not started.', file=sys.stderr)
         return 1
-    return run([
-        [sys.executable, "-m", "uvicorn", "api:app", "--host", "127.0.0.1", "--port", "8011",
-         "--timeout-graceful-shutdown", "15", "--no-access-log"],
-        ["node", str(ROOT / "web/server.js")],
-    ], env)
+    return run(production_commands(env), env)
 
 
 if __name__ == "__main__":
