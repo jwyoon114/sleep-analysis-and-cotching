@@ -24,7 +24,8 @@ import postgres_migrate
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY = "76d51039bbafc7db6e46b12edaa1cbe862a0eb44"
-ROLLBACK_SOURCE = json.loads((ROOT / 'deploy/rollback-source.json').read_text(encoding='utf-8'))['commit']
+ROLLBACK = json.loads((ROOT / 'deploy/rollback-source.json').read_text(encoding='utf-8'))
+ROLLBACK_SOURCE = ROLLBACK['commit']
 ORIGIN = "https://release-check.invalid"
 PROFILE = {
     "mbti": "ISTJ", "speech": "polite", "intensity": "gentle",
@@ -91,8 +92,10 @@ class ReleaseRecoveryTests(unittest.TestCase):
         cls.rollback_source = cls.workspace / 'rollback-source'
         with ZipFile(rollback_archive) as bundle:
             bundle.extractall(cls.rollback_source)
-        if postgres_migrate.load_migrations(cls.rollback_source / 'migrations/postgresql') != postgres_migrate.load_migrations():
-            raise AssertionError('Rollback migration catalog does not match the release')
+        rollback_catalog = postgres_migrate.load_migrations(cls.rollback_source / 'migrations/postgresql')
+        if ([entry.version for entry in rollback_catalog] != ROLLBACK['schema_versions']
+                or rollback_catalog != postgres_migrate.load_migrations()[:len(rollback_catalog)]):
+            raise AssertionError('Rollback migration catalog does not match the release prefix')
         for module in ('production_policy.py', 'backup_policy.py'):
             if (cls.rollback_source / module).read_text(encoding='utf-8') != (ROOT / module).read_text(encoding='utf-8'):
                 raise AssertionError('Rollback policy does not match the release')
@@ -144,9 +147,16 @@ print(json.dumps({'account': account, 'session': record, 'text': coaching['coach
         with self.cluster.connect(database) as connection:
             tables = ["accounts", "account_consents", "sessions", "stages", "coaching", "coaching_context"]
             if upgraded:
-                tables.extend(("account_personalization", "morning_plans", "daljam_schema_migrations"))
+                tables.extend(("account_personalization", "morning_plans", "daljam_schema_migrations",
+                               "web_push_subscriptions", "web_push_test_limits", "web_push_deliveries"))
             return {table: connection.execute("SELECT * FROM " + table + " ORDER BY 1, 2").fetchall()
                     for table in tables}
+
+    def rollback_with_current_catalog(self, name):
+        destination = self.workspace / name
+        shutil.copytree(self.rollback_source, destination)
+        shutil.copytree(postgres_migrate.MIGRATIONS, destination / "migrations" / "postgresql", dirs_exist_ok=True)
+        return destination
 
     def cli(self, program, database, *args):
         # The generated cluster is the only possible target. Keep passwords out of argv.
@@ -186,7 +196,7 @@ with TestClient(app) as client:
         self.cli("pg_dump", database, "--format=custom", "--file=" + str(dump))
         self.assertGreater(dump.stat().st_size, 0)
 
-        self.assertEqual(self.apply(database), (3, 4))
+        self.assertEqual(self.apply(database), (3, 4, 5, 6))
         self.assertEqual(self.apply(database), ())
         with patch.dict(os.environ, self.isolated_env(database), clear=True), TestClient(app) as http:
             token = http.post("/auth/login", json={
@@ -208,8 +218,8 @@ with TestClient(app) as client:
         self.assertEqual(self.apply(restored, self.legacy_migrations), ())
         self.old_api(self.legacy, restored, seed)
 
-        compatible = self.workspace / "compatible"
-        shutil.copytree(self.rollback_source, compatible)
+        self.python(self.rollback_source, database, "-m", "postgres_migrate", status=1, marker="앞선 마이그레이션")
+        compatible = self.rollback_with_current_catalog("compatible")
         self.python(compatible, database, "-m", "postgres_migrate")
         self.old_api(compatible, database, seed, write=True)
         self.assertEqual(self.snapshot(database, upgraded=True), after)
@@ -224,7 +234,7 @@ with TestClient(app) as client:
         subprocess.run(["docker", "build", "-f", "Dockerfile.production", "-t", previous, "."],
                        cwd=self.legacy, check=True, timeout=900)
         subprocess.run(['docker', 'build', '-f', 'Dockerfile.production', '-t', compatible, '.'],
-                       cwd=self.rollback_source, check=True, timeout=900)
+                       cwd=self.rollback_with_current_catalog("docker-compatible"), check=True, timeout=900)
 
         database = self.cluster.new_database()
         seed = self.seed(database)
@@ -313,6 +323,7 @@ with TestClient(app) as client:
             commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             manifest = {'commit': commit, 'legacy_commit': LEGACY, 'rollback_source_commit': ROLLBACK_SOURCE,
                         'backup_policy': 'render-pitr-3d-v1',
+                        'rollback_catalog_commit': commit,
                         'apk_sha256': APK_SHA, 'images': {}, 'contains_database': False}
             tags = []
             for role, image in (('candidate', candidate), ('rollback', compatible)):

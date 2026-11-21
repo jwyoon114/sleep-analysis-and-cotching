@@ -6,10 +6,11 @@ import {api, ApiError, clock, colors, compare, daily, labels, minutes, shortDate
 import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
 import {coachingDataNotes} from "@/lib/coaching-body";
-import {installPlatform} from "@/lib/install-platform";
+import {installPlatform, type InstallPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
 import SleepDashboard from "./sleep-dashboard";
+import HomeDataConnection from "./home-data-connection";
 import {homeSummary} from "@/lib/home-summary";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
@@ -21,7 +22,7 @@ import {Onboarding, ProfilePreferences} from "./personalization";
 import {MbtiWheel} from "./personalization-fields";
 import {CHARACTER_THEMES, type Personalization, type Preferences} from "@/lib/personalization";
 import {MainNavigation, PageHero, type MainTab} from "./mobile-shell";
-import HealthConnect, {stopNativeHealth} from "./health-connect";
+import HealthConnect, {stopNativeHealth, type AndroidConnection} from "./health-connect";
 import CoachingStylePreview, { CoachingAdvice } from "./coaching-style-preview";
 import {CHARACTERS, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
 
@@ -102,13 +103,21 @@ export default function SleepApp() {
   const readyForRecords=demo||profile!==null;
   const mbti=demo?demoMbti:profile?.mbti??null;
   const characterId=demo?demoCharacter:profile?.character??"cat";
-  const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
+  const [recordsStatus,setRecordsStatus]=useState<"loading"|"ready"|"error">("loading");
+  const loading=recordsStatus==="loading";
+  const [trashLoading,setTrashLoading]=useState(false);
+  const [busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
   const [coachingRevision,setCoachingRevision]=useState(0);
   const [error,setError]=useState(""),[notice,setNotice]=useState(""),[days,setDays]=useState(7),[end,setEnd]=useState(today);
   const [uploadView,setUploadView]=useState<"file"|"guide"|null>(null);
   const upload=uploadView!==null;
   const [file,setFile]=useState<File|null>(null),[dragging,setDragging]=useState(false),[confirmation,setConfirmation]=useState<Confirmation|null>(null),[phrase,setPhrase]=useState("");
-  const [isAppleMobile,setIsAppleMobile]=useState(false);
+  const [devicePlatform,setDevicePlatform]=useState<InstallPlatform>("web");
+  const isAppleMobile=devicePlatform==="ios";
+  const [nativeHealth,setNativeHealth]=useState<{owner:string;status:AndroidConnection}|null>(null);
+  const handleAndroidStatus=useCallback((status:AndroidConnection)=>{
+    if(accountId)setNativeHealth({owner:accountId,status});
+  },[accountId]);
   const [backup,setBackup]=useState<{backup_count:number;retention_days:number;pending:number}|null>(null);
   const fileInput=useRef<HTMLInputElement>(null);
   const chooseFileButton=useRef<HTMLButtonElement>(null);
@@ -117,17 +126,27 @@ export default function SleepApp() {
   const latest=records[0];
   const coachingRecordId=page==="dashboard" ? latest?.analysis_id : selected;
   const healthSynced=useCallback(()=>setRevision(n=>n+1),[]);
+  const showTheme=!!user&&readyForRecords&&!boot;
+  useEffect(()=>{
+    if(!showTheme)return;
+    const tag=document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if(!tag)return;
+    const fallback=tag.content;
+    const base=getComputedStyle(document.documentElement).getPropertyValue("--page-chrome").trim();
+    if(base)tag.content=base;
+    return()=>{tag.content=fallback;};
+  },[showTheme,characterId]);
   useEffect(()=>{
     const update=()=>{
       const platform=window.DaljamNative?.platform;
-      setIsAppleMobile(platform==="ios"||installPlatform(navigator,platform==="android")==="ios");
+      setDevicePlatform(platform==="ios"?"ios":installPlatform(navigator,platform==="android"));
     };
     update();
     window.addEventListener("daljam-native-ready",update);
     return()=>window.removeEventListener("daljam-native-ready",update);
   },[]);
-  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
-  useEffect(()=>{if(new URLSearchParams(window.location.search).get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
+  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setRecordsStatus("loading");setNativeHealth(null);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
+  useEffect(()=>{const query=new URLSearchParams(window.location.search);if(query.get("tab")==="plan")setPage("plan");if(query.get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
   useEffect(()=>{
     if(!accountId||demo)return;
     const controller=new AbortController();
@@ -144,9 +163,22 @@ export default function SleepApp() {
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(""),6000);return()=>clearTimeout(t);},[notice]);
   useEffect(()=>{
     if(!user||!readyForRecords)return;
-    if(demo){const r=demoRecords();setRecords(r);setSelected(s=>s||r[0].analysis_id);return;}
-    const c=new AbortController();setLoading(true);
-    api<{sessions:SleepRecord[]}>("watch/sessions","GET",undefined,c.signal).then(r=>{setRecords(r.sessions);setSelected(s=>r.sessions.some(v=>v.analysis_id===s)?s:r.sessions[0]?.analysis_id||"");}).catch(e=>{if(e.name==="AbortError")return;if(e.status===401)reset();setError(e.message);}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();
+    if(demo){const r=demoRecords();setRecords(r);setRecordsStatus("ready");setSelected(s=>s||r[0].analysis_id);return;}
+    const c=new AbortController();
+    // Keep the last successful view in place when native sync refreshes the list.
+    setRecordsStatus(current=>current==="ready"?"ready":"loading");
+    api<{sessions:SleepRecord[]}>("watch/sessions","GET",undefined,c.signal).then(r=>{
+      if(c.signal.aborted)return;
+      setRecords(r.sessions);
+      setSelected(s=>r.sessions.some(v=>v.analysis_id===s)?s:r.sessions[0]?.analysis_id||"");
+      setRecordsStatus("ready");
+    }).catch(e=>{
+      if(c.signal.aborted)return;
+      if(e.status===401)reset();
+      else setRecordsStatus("error");
+      setError(e.message);
+    });
+    return()=>c.abort();
   },[user,demo,readyForRecords,revision,reset]);
   useEffect(()=>{
     if(!coachingRecordId||!user||!readyForRecords)return;
@@ -167,7 +199,7 @@ export default function SleepApp() {
   },[coachingRecordId,user,demo,readyForRecords,revision,coachingRevision,reset]);
   useEffect(()=>{
     if(page!=="trash"||!user)return;if(demo){setTrash({sessions:[],coaching:[]});return;}
-    const c=new AbortController();setLoading(true);Promise.all([api<Trash>("watch/trash","GET",undefined,c.signal),api<{backup_count:number;retention_days:number;pending:number}>("watch/backup-policy","GET",undefined,c.signal)]).then(([t,b])=>{setTrash(t);setBackup(b);}).catch(e=>{if(e.name!=="AbortError"){if(e.status===401)reset();setError(e.message);}}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();
+    const c=new AbortController();setTrashLoading(true);Promise.all([api<Trash>("watch/trash","GET",undefined,c.signal),api<{backup_count:number;retention_days:number;pending:number}>("watch/backup-policy","GET",undefined,c.signal)]).then(([t,b])=>{setTrash(t);setBackup(b);}).catch(e=>{if(e.name!=="AbortError"){if(e.status===401)reset();setError(e.message);}}).finally(()=>{if(!c.signal.aborted)setTrashLoading(false);});return()=>c.abort();
   },[page,user,demo,revision,reset]);
   useEffect(()=>{
     if(!upload&&!confirmation)return;
@@ -236,11 +268,15 @@ export default function SleepApp() {
       setCoachRequest({recordId,kind:"error",status:error instanceof ApiError?error.status:null});
     }finally{setBusy(false);}
   }
-  function navigate(p:Page){
+  function navigate(p:Page, focusSelector="h1"){
     if(p==="coaching")setCoachingBack(page==="recordDetail"?"recordDetail":"dashboard");
     setPage(p);setError("");
     window.scrollTo(0,0);
-    if(p!==page)requestAnimationFrame(()=>main.current?.querySelector("h1")?.focus({preventScroll:true}));
+    if(p!==page)requestAnimationFrame(()=>{
+      const target=main.current?.querySelector<HTMLElement>(focusSelector);
+      target?.focus({preventScroll:true});
+      if(focusSelector!=="h1")target?.scrollIntoView({block:"start"});
+    });
   }
   function openDashboardPage(destination:"recordDetail"|"coaching"){
     if(latest)setSelected(latest.analysis_id);
@@ -321,7 +357,7 @@ export default function SleepApp() {
   const activeTab:MainTab = page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
   const backTo:Page|null = page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
-  const summary=homeSummary(latest,loading);
+  const summary=homeSummary(latest,recordsStatus);
   return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page} data-keyboard-open={keyboardOpen||undefined}>
     <MainNavigation active={activeTab} onNavigate={navigate}/>
     <main ref={main} className="mobile-content">
@@ -335,10 +371,14 @@ export default function SleepApp() {
 
     {page==="dashboard"&&<SleepDashboard
       record={latest}
-      recordsLoading={loading}
+      recordsStatus={recordsStatus}
       coaching={dashboardCoaching}
       coachingStatus={dashboardHistory?.status ?? "loading"}
-      onUpload={openUpload}
+      connection={!demo&&recordsStatus==="ready"&&!latest&&<HomeDataConnection
+        connection={nativeHealth?.owner===user.id?nativeHealth.status:"checking"} platform={devicePlatform}
+        onUpload={openUpload} onGuide={openIphoneGuide}
+        onHealth={()=>navigate("account","#galaxy-health")}/>}
+      onRetryRecords={()=>{setError("");setRevision(n=>n+1);}}
       onRecord={()=>openDashboardPage("recordDetail")}
       onCoaching={()=>openDashboardPage("coaching")}
       onRetryCoaching={reloadCoachingHistory}
@@ -355,7 +395,7 @@ export default function SleepApp() {
         <label className="profile-setting">캐릭터<select value={demoCharacter} onChange={event=>setDemoCharacter(event.target.value as CharacterId)}>
           {CHARACTERS.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onIphoneGuide={isAppleMobile&&!demo?openIphoneGuide:undefined} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced}/>}/>
+      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onIphoneGuide={isAppleMobile&&!demo?openIphoneGuide:undefined} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced} onAndroidStatus={handleAndroidStatus}/>}/>
     </div>
     <SleepPlan key={user.id} active={page==="plan"} coaching={saved} demo={demo}/>
 
@@ -431,7 +471,7 @@ export default function SleepApp() {
 
     {page==="comparison"&&<><div className="comparison-toolbar"><div className="segmented"><button className={days===7?"active":""} onClick={()=>setDays(7)}>최근 7일</button><button className={days===30?"active":""} onClick={()=>setDays(30)}>최근 30일</button></div><label className="date-field"><CalendarDays size={16}/>기준일<input aria-label="비교 기준일" type="date" value={end} onChange={e=>{if(e.target.value)setEnd(e.target.value);}}/></label></div><div className="comparison-stats">{[{title:"기록일당 평균 수면",current:minutes(average),previous:minutes(comparison.previous.average_asleep_minutes_per_recorded_day),icon:Moon},{title:"기록이 있는 날짜",current:`${comparison.current.recorded_days}일`,previous:`${comparison.previous.recorded_days}일`,icon:CalendarDays},{title:"기록일당 평균 각성",current:minutes(comparison.current.average_awake_minutes_per_recorded_day),previous:minutes(comparison.previous.average_awake_minutes_per_recorded_day),icon:Sun}].map(({title,current,previous,icon:Icon})=><section className="panel comparison-stat" key={title}><Icon size={21}/><span>{title}</span><strong>{current}</strong><small>이전 기간 {previous}</small></section>)}</div><section className="panel"><div className="panel-heading"><div><h2>이번 {days}일의 수면 흐름</h2><p>{comparison.current.start} – {comparison.current.end}</p></div><Tag>기록일 합계 기준</Tag></div><SleepChart rows={rows} large/><div className="compare-periods"><div><span>이번 기간</span><strong>{comparison.current.start} – {comparison.current.end}</strong></div><ArrowLeft size={16}/><div><span>이전 기간</span><strong>{comparison.previous.start} – {comparison.previous.end}</strong></div></div><p className="disclaimer">미기록 날짜는 평균에서 제외합니다. 같은 날 시작한 기록은 합산하며, 수면의 질이나 건강 점수로 환산하지 않습니다.</p></section></>}
 
-    {page==="trash"&&<><div className="soft-info retention-note"><RotateCcw size={20}/><div><strong>마음이 바뀌어도 괜찮아요.</strong><p>삭제한 기록은 30일 동안 복원할 수 있습니다. 기간이 지난 항목은 앱 이용 시 정리됩니다. 영구 삭제한 기록은 복원할 수 없어요.</p></div></div><section className="panel"><div className="panel-heading"><h2>휴지통 <span className="count">{trash.sessions.length+trash.coaching.length}</span></h2>{loading&&<Busy/>}</div>{!trash.sessions.length&&!trash.coaching.length?<Empty title="휴지통이 비어 있어요"><p>삭제한 분석과 코칭은 이곳에서 관리할 수 있습니다.</p></Empty>:<div className="trash-list">{([...[...trash.sessions].map(t=>({id:t.id,kind:"session",title:`${shortDate(t.record.start)} 수면 분석`,expires_at:t.expires_at,blocked:false})),...[...trash.coaching].map(t=>({id:t.id,kind:"coaching",title:t.coaching.slice(0,65),expires_at:t.expires_at,blocked:!!t.parent_in_trash}))]).map(t=><div className="trash-row" key={t.kind+t.id}><span className="record-moon">{t.kind==="session"?<Moon size={19}/>:<Sparkles size={19}/>}</span><div><strong>{t.title}</strong><p>{shortDate(t.expires_at)}까지 복원 가능{t.blocked?" · 연결된 분석을 먼저 복원하세요":""}</p></div><button className="button secondary compact" disabled={busy||t.blocked} onClick={()=>perform(async()=>{await api(`watch/trash/${t.kind}/${t.id}/restore`,"POST");setRevision(n=>n+1);},"기록을 복원했어요.")}><RotateCcw size={14}/>복원</button><button className="icon-button danger" aria-label={`${t.title} 영구 삭제`} disabled={busy} onClick={()=>ask("이 기록을 영구 삭제할까요?","앱 DB와 관리 대상 백업에 삭제를 반영합니다. 이 작업은 되돌릴 수 없습니다.",async()=>{await api(`watch/trash/${t.kind}/${t.id}`,"DELETE");setRevision(n=>n+1);},true)}><Trash2 size={17}/></button></div>)}</div>}</section><section className="panel backup-panel"><div className="inline-title"><ShieldCheck size={21}/><h2>백업 보관 안내</h2></div><p>관리 대상 백업은 {backup?.retention_days||30}일 보관합니다. 기록·계정 영구 삭제는 해당 백업에도 반영됩니다.</p>{backup&&<Tag>관리 중인 백업 {backup.backup_count}개 · 정리 재시도 {backup.pending}개</Tag>}<p className="disclaimer">원본 파일, 다운로드한 파일, 외부 복사본은 앱의 삭제 관리 범위에 포함되지 않습니다.</p></section></>}
+    {page==="trash"&&<><div className="soft-info retention-note"><RotateCcw size={20}/><div><strong>마음이 바뀌어도 괜찮아요.</strong><p>삭제한 기록은 30일 동안 복원할 수 있습니다. 기간이 지난 항목은 앱 이용 시 정리됩니다. 영구 삭제한 기록은 복원할 수 없어요.</p></div></div><section className="panel"><div className="panel-heading"><h2>휴지통 <span className="count">{trash.sessions.length+trash.coaching.length}</span></h2>{trashLoading&&!demo&&<Busy/>}</div>{!trash.sessions.length&&!trash.coaching.length?<Empty title="휴지통이 비어 있어요"><p>삭제한 분석과 코칭은 이곳에서 관리할 수 있습니다.</p></Empty>:<div className="trash-list">{([...[...trash.sessions].map(t=>({id:t.id,kind:"session",title:`${shortDate(t.record.start)} 수면 분석`,expires_at:t.expires_at,blocked:false})),...[...trash.coaching].map(t=>({id:t.id,kind:"coaching",title:t.coaching.slice(0,65),expires_at:t.expires_at,blocked:!!t.parent_in_trash}))]).map(t=><div className="trash-row" key={t.kind+t.id}><span className="record-moon">{t.kind==="session"?<Moon size={19}/>:<Sparkles size={19}/>}</span><div><strong>{t.title}</strong><p>{shortDate(t.expires_at)}까지 복원 가능{t.blocked?" · 연결된 분석을 먼저 복원하세요":""}</p></div><button className="button secondary compact" disabled={busy||t.blocked} onClick={()=>perform(async()=>{await api(`watch/trash/${t.kind}/${t.id}/restore`,"POST");setRevision(n=>n+1);},"기록을 복원했어요.")}><RotateCcw size={14}/>복원</button><button className="icon-button danger" aria-label={`${t.title} 영구 삭제`} disabled={busy} onClick={()=>ask("이 기록을 영구 삭제할까요?","앱 DB와 관리 대상 백업에 삭제를 반영합니다. 이 작업은 되돌릴 수 없습니다.",async()=>{await api(`watch/trash/${t.kind}/${t.id}`,"DELETE");setRevision(n=>n+1);},true)}><Trash2 size={17}/></button></div>)}</div>}</section><section className="panel backup-panel"><div className="inline-title"><ShieldCheck size={21}/><h2>백업 보관 안내</h2></div><p>관리 대상 백업은 {backup?.retention_days||30}일 보관합니다. 기록·계정 영구 삭제는 해당 백업에도 반영됩니다.</p>{backup&&<Tag>관리 중인 백업 {backup.backup_count}개 · 정리 재시도 {backup.pending}개</Tag>}<p className="disclaimer">원본 파일, 다운로드한 파일, 외부 복사본은 앱의 삭제 관리 범위에 포함되지 않습니다.</p></section></>}
 
     {page==="accountSettings"&&<div className="account-grid"><section className="panel account-panel"><div className="account-profile"><span className="avatar large">{user.username.slice(0,1).toUpperCase()}</span><div><h2>{user.username} 님의 계정</h2><p>소중한 나의 밤을 위한 공간</p></div></div><h3>아이디 변경</h3><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await perform(async()=>{await api("auth/me","PATCH",Object.fromEntries(f));reset();setNotice("아이디를 변경했어요. 새 아이디로 다시 로그인해 주세요.");});}}><label>새 아이디<input name="new_username" required minLength={3} maxLength={40} autoComplete="username" placeholder="새 아이디" defaultValue={user.username}/></label><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><button className="button secondary" disabled={busy||demo}>아이디 변경</button></form><hr/><h3>비밀번호 변경</h3><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(f.get("new_password")!==f.get("confirmation")){setError("새 비밀번호 확인이 일치하지 않습니다.");return;}f.delete("confirmation");await perform(async()=>{await api("auth/me","PATCH",Object.fromEntries(f));reset();setNotice("비밀번호를 변경했어요. 다시 로그인해 주세요.");});}}><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><label>새 비밀번호<input name="new_password" type="password" autoComplete="new-password" required minLength={10} maxLength={128} placeholder="10자 이상 입력해 주세요"/></label><label>새 비밀번호 확인<input name="confirmation" type="password" autoComplete="new-password" required minLength={10} maxLength={128}/></label><button className="button secondary" disabled={busy||demo}>비밀번호 변경</button></form><p className="disclaimer">변경하면 모든 로그인 세션이 종료됩니다. 기존 기록과 코칭은 유지됩니다.</p></section><section className="panel account-panel account-danger"><span className="danger-icon"><Trash2 size={22}/></span><h2>계정 삭제</h2><p>계정과 연결된 분석, 코칭, 휴지통, 원시 기록을 영구 삭제합니다. 관리 대상 백업에도 삭제를 반영합니다.</p><div className="soft-warning">삭제한 계정과 기록은 복원할 수 없습니다. 같은 아이디로 다시 가입해도 이전 기록은 돌아오지 않습니다.</div><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await perform(async()=>{const result=await api<{backups?:{pending:number}}>("auth/me","DELETE",{current_password:f.get("current_password"),confirmation:f.get("confirmation")});reset();setNotice(result.backups?.pending?"계정은 삭제됐지만 일부 백업 정리가 남아 있습니다. 관리자에게 알려주세요.":"계정과 연결된 기록을 삭제했습니다.");});}}><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><label>확인을 위해 ‘계정 삭제’를 입력해 주세요<input name="confirmation" pattern="계정 삭제" required placeholder="계정 삭제" autoComplete="off"/></label><label className="checkbox-label"><input type="checkbox" required/>계정과 기록을 영구 삭제하며 복원할 수 없음을 이해했습니다.</label><button className="button danger-button" disabled={busy||demo}>계정 영구 삭제</button></form></section></div>}
     <footer className="footer"><span><Moon size={14}/>달잠 · 조금 더 나은 밤을 위해</span><span>웨어러블 추정 기록 기반 · 의료 진단 서비스가 아닙니다</span></footer>

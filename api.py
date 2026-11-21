@@ -1,8 +1,10 @@
 """Account-based wearable sleep API. No EEG model is required."""
-from typing import Literal
+from typing import Annotated, Literal
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Path, Response, UploadFile
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from openai import APIConnectionError, APIStatusError, RateLimitError
@@ -14,6 +16,8 @@ import history_service
 import backup_policy
 import sleep_alarms
 import health_sync
+import web_push
+import scheduled_push
 from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
@@ -21,6 +25,20 @@ from app_database import DatabaseUnavailable, BackupPolicyPending, connect_appli
 from contextlib import closing
 
 app = FastAPI(title="나의 수면 리포트 API", version="2.0.0")
+
+
+@app.exception_handler(web_push.PushError)
+async def push_failure(request, error):
+    return JSONResponse({"detail": str(error)}, status_code=error.status,
+                        headers={"Cache-Control": "private, no-store"})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_failure(request, error):
+    if request.url.path.startswith("/web-push"):
+        return JSONResponse({"detail": "알림 설정 입력을 확인해 주세요."}, status_code=422,
+                            headers={"Cache-Control": "private, no-store"})
+    return await request_validation_exception_handler(request, error)
 
 @app.exception_handler(DatabaseUnavailable)
 async def database_unavailable(request, error):
@@ -94,6 +112,10 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
         raise HTTPException(401, str(error), headers={"WWW-Authenticate": "Bearer"})
 
 
+def push_device(value: Annotated[str | None, Header(alias="X-Daljam-Push-Device")] = None):
+    return web_push.device_hash(value)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "wearable_sleep", "supported_formats": ["Health Data Export Markdown (.md)", "Sleep JSON v1 (.json)", "Health Export Kit JSON v2 (.json)"]}
@@ -124,6 +146,47 @@ def test_alarm(user=Depends(require_user)):
     if not sleep_alarms.desktop_available(): raise HTTPException(400,'이 PC에서는 알람을 사용할 수 없습니다.')
     sleep_alarms.notify('bedtime')
     return {'status':'started'}
+
+
+@app.get("/web-push")
+def push_status(response: Response, user=Depends(require_user), credentials=Depends(bearer), device=Depends(push_device)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return web_push.status(user["id"], credentials.credentials, device)
+
+
+@app.post("/web-push/subscriptions")
+def push_subscribe(value: web_push.Subscription, response: Response, user=Depends(require_user),
+                   credentials=Depends(bearer), device=Depends(push_device)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return web_push.subscribe(user["id"], credentials.credentials, value, device)
+
+
+@app.patch("/web-push/subscriptions/{endpoint_id}")
+def push_reminders(endpoint_id: Annotated[str, Path(pattern=r"^[a-f0-9]{64}$")],
+                   value: web_push.ReminderPreference, response: Response,
+                   user=Depends(require_user), device=Depends(push_device)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return web_push.set_reminders(user["id"], endpoint_id, device, value.enabled)
+
+
+@app.delete("/web-push/subscriptions/{endpoint_id}")
+def push_unsubscribe(endpoint_id: Annotated[str, Path(pattern=r"^[a-f0-9]{64}$")],
+                     response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return web_push.unsubscribe(user["id"], endpoint_id)
+
+
+@app.post("/web-push/test")
+def push_test(value: web_push.TestRequest, response: Response, user=Depends(require_user),
+              credentials=Depends(bearer), device=Depends(push_device)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return web_push.send_test(user["id"], credentials.credentials, value.id, device)
+
+
+@app.post("/internal/web-push/run")
+def run_push_job(response: Response, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return scheduled_push.run_authorized(credentials.credentials if credentials else None)
 
 
 @app.get("/plans")
@@ -178,9 +241,9 @@ def sign_up(request: Registration):
 
 
 @app.post("/auth/login")
-def sign_in(request: Credentials):
+def sign_in(request: Credentials, device=Depends(push_device)):
     try:
-        return login(request.username, request.password)
+        return login(request.username, request.password, push_device_hash=device)
     except AuthenticationError as error:
         raise HTTPException(401, str(error))
 
@@ -233,8 +296,8 @@ def delete_me(request: AccountDeleteRequest, user=Depends(require_user)):
 
 
 @app.post("/auth/logout")
-def sign_out(user=Depends(require_user), credentials=Depends(bearer)):
-    logout(credentials.credentials)
+def sign_out(user=Depends(require_user), credentials=Depends(bearer), device=Depends(push_device)):
+    logout(credentials.credentials, push_device_hash=device)
     return {"status": "logged_out"}
 
 

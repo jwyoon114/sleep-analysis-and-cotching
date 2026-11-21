@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { randomBytes } from "node:crypto";
 import {demoBlockedResponse, isDemoOnly} from "@/lib/demo-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 const COOKIE = "sleep_session";
+const PUSH_DEVICE = "sleep_push_installation";
 const LIMIT = 4 * 1024 * 1024 + 64 * 1024;
-const allowed = /^(?:health|plans(?:\/(?:bedtime|morning-view|\d{4}-\d{2}-\d{2}))?|alarms(?:\/test)?|auth\/(?:register|login|logout|me|personalization)|analyze|coach|watch\/(?:health\/connection|import|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
+const allowed = /^(?:health|plans(?:\/(?:bedtime|morning-view|\d{4}-\d{2}-\d{2}))?|web-push(?:\/test|\/subscriptions(?:\/[a-f0-9]{64})?)?|alarms(?:\/test)?|auth\/(?:register|login|logout|me|personalization)|analyze|coach|watch\/(?:health\/connection|import|sessions(?:\/[a-zA-Z0-9_-]+(?:\/coaching(?:\/[a-zA-Z0-9_-]+)?)?)?|trash(?:\/(?:session|coaching)\/[a-zA-Z0-9_-]+(?:\/restore)?)?|comparison|backup-policy))$/;
 
 async function handler(request: NextRequest, context: {params: Promise<{path: string[]}>}) {
   if (isDemoOnly()) return demoBlockedResponse();
@@ -37,6 +39,14 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
     const contentType = request.headers.get("content-type");
     if (contentType) headers.set("Content-Type", contentType);
     if (!publicEndpoint && token) headers.set("Authorization", `Bearer ${token}`);
+    const previousDevice = jar.get(PUSH_DEVICE)?.value;
+    const validDevice = previousDevice && /^[a-f0-9]{64}$/.test(previousDevice);
+    const registering = request.method === "POST" && endpoint === "web-push/subscriptions";
+    const newDevice = registering && !validDevice ? randomBytes(32).toString("hex") : null;
+    const device = validDevice ? previousDevice : newDevice;
+    if (device && (endpoint.startsWith("web-push") || endpoint === "auth/login" || endpoint === "auth/logout")) {
+      headers.set("X-Daljam-Push-Device", device);
+    }
     let body: Uint8Array<ArrayBuffer> | undefined;
     if (!["GET", "HEAD"].includes(request.method) && request.body) {
       const reader = request.body.getReader();
@@ -58,11 +68,13 @@ async function handler(request: NextRequest, context: {params: Promise<{path: st
     }
     const upstream = await fetch(url, {method: request.method, headers, body, cache: "no-store", signal: controller.signal, redirect: "error"});
     const result = await upstream.json();
+    const cookieOptions = {httpOnly: true, secure: !!process.env.DALJAM_PUBLIC_ORIGIN || request.nextUrl.protocol === "https:" || process.env.VERCEL === "1", sameSite: "strict" as const, path: "/"};
     if (endpoint === "auth/login" && upstream.ok) {
       if (typeof result.token !== "string") return fail("로그인 응답을 확인할 수 없습니다.", 502);
-      jar.set(COOKIE, result.token, {httpOnly: true, secure: !!process.env.DALJAM_PUBLIC_ORIGIN || request.nextUrl.protocol === "https:" || process.env.VERCEL === "1", sameSite: "strict", path: "/", maxAge: 86400});
+      jar.set(COOKIE, result.token, {...cookieOptions, maxAge: 86400});
       delete result.token;
     }
+    if (newDevice && upstream.ok) jar.set(PUSH_DEVICE, newDevice, {...cookieOptions, maxAge: 365 * 86400});
     if (upstream.status === 401 && !publicEndpoint || endpoint === "auth/logout" && upstream.ok || endpoint === "auth/me" && ["PATCH", "DELETE"].includes(request.method) && upstream.ok) jar.delete(COOKIE);
     return NextResponse.json(result, {status: upstream.status, headers: {"Cache-Control": "no-store, private"}});
   } catch {

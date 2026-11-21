@@ -15,13 +15,13 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 SLEEP_DB_BACKEND=postgresql COACHING_ENGINE=rules \
     SLEEP_DESKTOP_ALARMS=0 SLEEP_API_URL=http://127.0.0.1:8011 PORT=10000 \
-    DALJAM_DEMO_ONLY=0 DALJAM_ENV=production
+    DALJAM_DEMO_ONLY=0 DALJAM_ENV=production DALJAM_SCHEDULED_PUSH=0 DALJAM_WEB_PUSH_TEST=0
 COPY requirements-server.txt requirements-postgres.txt ./
 RUN pip install --no-cache-dir -r requirements-server.txt \
     && groupadd --gid 10001 daljam && useradd --uid 10001 --gid daljam --create-home daljam
 COPY api.py account_personalization.py app_database.py postgres_db.py postgres_migrate.py health_records.py export_times.py json_sleep.py health_export_kit.py \
     sleep_accounts.py health_sync.py coaching_service.py coaching_expression.py coaching_free.py coaching_patterns.py \
-    coaching_rules.py history_service.py service_limits.py sleep_alarms.py morning_plans.py backup_policy.py production_policy.py ./
+    coaching_rules.py history_service.py service_limits.py sleep_alarms.py morning_plans.py backup_policy.py production_policy.py web_push.py scheduled_push.py ./
 COPY migrations/postgresql/ ./migrations/postgresql/
 COPY deploy/supervisor.py ./deploy/supervisor.py
 COPY --from=web-build --chown=daljam:daljam /build/.next/standalone/ ./web/
