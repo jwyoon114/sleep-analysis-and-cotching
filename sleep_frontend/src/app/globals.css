@@ -50,3 +50,9 @@ body:has(.install-help-dialog[open]) {overflow:hidden;}
   .pwa-dialog {padding:22px;}
   .install-help-dialog h2 {margin-right:42px;}
 }
+
+.coaching-section h3{margin:0 0 .5rem;font-size:1rem}
+.coaching-section p{margin:0;white-space:pre-line;overflow-wrap:anywhere}
+.coaching-optional{margin-bottom:1rem}
+.coaching-optional form{margin-block:.8rem;min-width:0}
+.coaching-optional input[type="time"]{width:100%;min-width:0}

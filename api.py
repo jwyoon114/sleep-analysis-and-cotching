@@ -1,5 +1,6 @@
 """Account-based wearable sleep API. No EEG model is required."""
 from typing import Annotated, Literal
+from uuid import UUID
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Path, Response, UploadFile
@@ -11,14 +12,18 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, Field
 from account_personalization import Preferences, get_personalization, save_personalization
 import coaching_service
+import coaching_lifestyle
 import morning_plans
+import premium_service
+import premium_live_coaching
+import premium_ai_usage
 import history_service
 import backup_policy
 import sleep_alarms
 import health_sync
 import web_push
 import scheduled_push
-from health_records import delete_session, get_owned_session, import_export, list_sessions, overview
+from health_records import ManualSleepConflict, delete_session, get_owned_session, import_export, list_sessions, overview, save_manual_sleep
 from sleep_accounts import AuthenticationError, current_user, delete_account, login, logout, register, update_account
 from service_limits import CoachingLimitError
 from app_database import DatabaseUnavailable, BackupPolicyPending, connect_application_postgres, uses_postgres
@@ -82,6 +87,42 @@ class CoachingRequest(BaseModel):
     age_group: Literal["미입력", "성인", "미성년자"] = "미입력"
 
 
+class DemoActivationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    checkout_token: str = Field(min_length=20, max_length=128)
+    acknowledged: Literal[True]
+
+
+class DemoCoachingRequest(CoachingRequest):
+    model_config = {"extra": "forbid"}
+    request_id: UUID
+
+
+@app.exception_handler(premium_ai_usage.DemoCallLimit)
+async def premium_call_limit(request, error):
+    return JSONResponse(status_code=429, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_ai_usage.DuplicateRequest)
+async def premium_duplicate_request(request, error):
+    return JSONResponse(status_code=409, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_ai_usage.UsageUnavailable)
+async def premium_usage_unavailable(request, error):
+    return JSONResponse(status_code=503, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_service.DemoUnavailable)
+async def premium_demo_unavailable(request, error):
+    return JSONResponse(status_code=403, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
+@app.exception_handler(premium_service.InvalidCheckout)
+async def premium_checkout_invalid(request, error):
+    return JSONResponse(status_code=409, content={"detail": str(error)}, headers={"Cache-Control": "no-store"})
+
+
 class AccountUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
     current_password: str = Field(min_length=1, max_length=128)
@@ -101,6 +142,13 @@ class HealthConnectionRequest(BaseModel):
     source_id: str = Field(min_length=1, max_length=300)
     source_name: str = Field(min_length=1, max_length=120)
     auto_coach: bool = False
+
+
+class ManualSleepRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    start_local: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+    end_local: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
+    timezone: str = Field(min_length=1, max_length=80)
 
 
 def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
@@ -288,7 +336,9 @@ def edit_me(request: AccountUpdateRequest, user=Depends(require_user)):
 @app.delete("/auth/me")
 def delete_me(request: AccountDeleteRequest, user=Depends(require_user)):
     try:
-        return delete_account(user["id"], **request.model_dump())
+        result = delete_account(user["id"], **request.model_dump())
+        premium_service.clear_demo(user["id"])
+        return result
     except AuthenticationError as error:
         raise HTTPException(403, str(error))
     except ValueError as error:
@@ -298,6 +348,7 @@ def delete_me(request: AccountDeleteRequest, user=Depends(require_user)):
 @app.post("/auth/logout")
 def sign_out(user=Depends(require_user), credentials=Depends(bearer), device=Depends(push_device)):
     logout(credentials.credentials, push_device_hash=device)
+    premium_service.clear_demo(user["id"])
     return {"status": "logged_out"}
 
 
@@ -323,6 +374,27 @@ def watch_sessions(user=Depends(require_user)):
     return {"sessions": records, "overview": overview(records)}
 
 
+def _write_manual_sleep(request, account_id, analysis_id=None):
+    try:
+        return save_manual_sleep(account_id, request.start_local, request.end_local, request.timezone, analysis_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ManualSleepConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@app.post("/watch/manual-sessions")
+def create_manual_sleep(request: ManualSleepRequest, user=Depends(require_user)):
+    return _write_manual_sleep(request, user["id"])
+
+
+@app.patch("/watch/manual-sessions/{analysis_id}")
+def edit_manual_sleep(analysis_id: str, request: ManualSleepRequest, user=Depends(require_user)):
+    return _write_manual_sleep(request, user["id"], analysis_id)
+
+
 @app.get("/watch/sessions/{analysis_id}")
 def watch_session(analysis_id: str, user=Depends(require_user)):
     result = get_owned_session(analysis_id, user["id"])
@@ -332,9 +404,11 @@ def watch_session(analysis_id: str, user=Depends(require_user)):
 
 
 @app.get("/watch/sessions/{analysis_id}/coaching")
-def saved_coaching(analysis_id: str, user=Depends(require_user)):
+def saved_coaching(analysis_id: str, view: Literal['summary'] | None = None, user=Depends(require_user)):
     watch_session(analysis_id, user)
     records = coaching_service.list_coaching(user["id"], analysis_id)
+    if view == "summary":
+        records = [coaching_service.public_coaching(item) for item in records]
     return {"result": records[0] if records else None, "history": records}
 
 
@@ -384,11 +458,44 @@ def backup_status(user=Depends(require_user)):
     return backup_policy.maintain_backups()
 
 
+@app.get("/coach/preferences")
+def coaching_preferences(user=Depends(require_user)):
+    return coaching_lifestyle.preferences(user["id"])
+
+
+@app.patch("/coach/preferences")
+def update_coaching_preferences(settings: coaching_lifestyle.Preferences, user=Depends(require_user)):
+    return coaching_lifestyle.preferences(user["id"], settings)
+
+
+@app.get("/coach/habits/{analysis_id}")
+def coaching_habits(analysis_id: str, user=Depends(require_user)):
+    return coaching_lifestyle.daily_habits(user["id"], watch_session(analysis_id, user))
+
+
+@app.patch("/coach/habits/{analysis_id}")
+def update_coaching_habits(analysis_id: str, settings: coaching_lifestyle.DailyHabits, user=Depends(require_user)):
+    return coaching_lifestyle.daily_habits(user["id"], watch_session(analysis_id, user), settings)
+
+
+@app.post("/coach/free")
+def free_coach(request: CoachingRequest, user=Depends(require_user)):
+    session = watch_session(request.analysis_id, user)
+    try:
+        result = coaching_service.generate_free(user["id"], session)
+    except CoachingLimitError as error:
+        raise HTTPException(429, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+    return coaching_service.public_coaching(result) | {"reused": result.get("reused", False)}
+
+
 @app.post("/coach")
-def coach(request: CoachingRequest, user=Depends(require_user)):
+def coach(request: CoachingRequest, view: Literal['summary'] | None = None, user=Depends(require_user)):
     watch_session(request.analysis_id, user)
     try:
-        return coaching_service.generate(user["id"], request.analysis_id, request.model_dump(exclude={"analysis_id"}))
+        result = coaching_service.generate(user["id"], request.analysis_id, request.model_dump(exclude={"analysis_id"}))
+        return coaching_service.public_coaching(result) if view == "summary" else result
     except RateLimitError as error:
         raise HTTPException(429, coaching_service.api_limit_detail(error))
     except APIConnectionError:
@@ -401,6 +508,45 @@ def coach(request: CoachingRequest, user=Depends(require_user)):
         raise HTTPException(503, str(error))
     except RuntimeError as error:
         raise HTTPException(502, str(error))
+
+
+@app.get("/premium")
+def premium_status(response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return premium_live_coaching.annotate_status(premium_service.status(user["id"]), user["id"])
+
+
+@app.post("/premium/demo/checkout")
+def premium_checkout(user=Depends(require_user)):
+    return premium_service.start_checkout(user["id"])
+
+
+@app.post("/premium/demo/activate")
+def premium_activate(request: DemoActivationRequest, user=Depends(require_user)):
+    return premium_live_coaching.annotate_status(premium_service.activate_demo(user["id"], request.checkout_token), user["id"])
+
+
+@app.post("/premium/demo/coach")
+def premium_generate(request: DemoCoachingRequest, response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        return premium_live_coaching.generate(user["id"], request.analysis_id, str(request.request_id),
+                                             request.model_dump(exclude={"analysis_id", "request_id"}))
+    except LookupError:
+        raise HTTPException(404, "기록을 찾을 수 없습니다.")
+    except CoachingLimitError as error:
+        raise HTTPException(429, str(error))
+
+
+@app.delete("/premium/demo")
+def premium_reset(user=Depends(require_user)):
+    return premium_service.reset_demo(user["id"])
+
+
+@app.get("/premium/demo/preview")
+def premium_sample(response: Response, user=Depends(require_user)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return premium_service.sample_preview(user["id"])
 
 
 # Native apps use a revocable sync-only token, separate from web login.

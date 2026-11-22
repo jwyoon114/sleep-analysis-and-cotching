@@ -154,8 +154,14 @@ print(json.dumps({'account': account, 'session': record, 'text': coaching['coach
 
     def rollback_with_current_catalog(self, name):
         destination = self.workspace / name
-        shutil.copytree(self.rollback_source, destination)
-        shutil.copytree(postgres_migrate.MIGRATIONS, destination / "migrations" / "postgresql", dirs_exist_ok=True)
+        # Build the retained immutable recovery commit, not an uncommitted copy.
+        archive = self.workspace / (name + '.zip')
+        subprocess.run(['git', 'archive', '--format=zip', '-o', str(archive),
+                        ROLLBACK['compatible_source_commit']], cwd=ROOT, check=True)
+        with ZipFile(archive) as bundle:
+            bundle.extractall(destination)
+        if postgres_migrate.load_migrations(destination / 'migrations/postgresql') != postgres_migrate.load_migrations():
+            raise AssertionError('Recovery commit must accept the complete candidate catalog')
         return destination
 
     def cli(self, program, database, *args):
@@ -196,7 +202,7 @@ with TestClient(app) as client:
         self.cli("pg_dump", database, "--format=custom", "--file=" + str(dump))
         self.assertGreater(dump.stat().st_size, 0)
 
-        self.assertEqual(self.apply(database), (3, 4, 5, 6))
+        self.assertEqual(self.apply(database), (3, 4, 5, 6, 7, 8))
         self.assertEqual(self.apply(database), ())
         with patch.dict(os.environ, self.isolated_env(database), clear=True), TestClient(app) as http:
             token = http.post("/auth/login", json={
@@ -223,6 +229,91 @@ with TestClient(app) as client:
         self.python(compatible, database, "-m", "postgres_migrate")
         self.old_api(compatible, database, seed, write=True)
         self.assertEqual(self.snapshot(database, upgraded=True), after)
+
+    def test_exact_0006_0007_0008_steps_preserve_all_tables_and_restore(self):
+        database = self.cluster.new_database()
+        seed = self.seed(database)
+        catalogs = {}
+        for version in (6, 7):
+            folder = self.workspace / f'catalog-{version}'
+            shutil.copytree(postgres_migrate.MIGRATIONS, folder)
+            path = folder / 'manifest.json'
+            manifest = json.loads(path.read_text(encoding='utf-8'))
+            manifest['migrations'] = manifest['migrations'][:version]
+            path.write_text(json.dumps(manifest), encoding='utf-8')
+            catalogs[version] = folder
+        self.assertEqual(self.apply(database, catalogs[6]), (3, 4, 5, 6))
+        with self.cluster.connect(database) as db:
+            db.execute("INSERT INTO account_personalization VALUES(%s,'ISTJ','polite','gentle',FALSE,'cat','2026-11-01')",
+                       (seed['account']['id'],))
+            db.execute("INSERT INTO web_push_subscriptions "
+                       "(endpoint_id,account_id,device_hash,endpoint,p256dh,auth_secret,registered_at,reminders_enabled) "
+                       "VALUES('synthetic-endpoint',%s,'synthetic-device','https://fcm.googleapis.com/fcm/send/synthetic',"
+                       "'synthetic-public','synthetic-auth',now(),TRUE)", (seed['account']['id'],))
+
+        def fingerprints(name):
+            # Aggregate every existing table, without emitting its private contents.
+            from psycopg import sql
+            with self.cluster.connect(name) as db:
+                tables = db.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' "
+                                    "AND tablename<>'daljam_schema_migrations' ORDER BY tablename").fetchall()
+                result = {}
+                for row in tables:
+                    table = row['tablename']
+                    values = db.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall()
+                    serialized = sorted(json.dumps(value, sort_keys=True, default=str) for value in values)
+                    result[table] = (len(values), sha256(json.dumps(serialized).encode()).hexdigest())
+                return result
+
+        before = fingerprints(database)
+        dump = self.workspace / 'schema-0006.dump'
+        self.cli('pg_dump', database, '--format=custom', '--file=' + str(dump))
+        original_hash = sha256(dump.read_bytes()).hexdigest()
+        self.assertEqual(self.apply(database, catalogs[7]), (7,))
+        after7 = fingerprints(database)
+        self.assertEqual({key: after7[key] for key in before}, before)
+        self.assertEqual(after7['coaching_preferences'][0], 0)
+        self.assertEqual(after7['coaching_daily_habits'][0], 0)
+        self.assertEqual(self.apply(database), (8,))
+        self.assertEqual(self.apply(database), ())
+        self.assertEqual(fingerprints(database), after7)
+
+        restored = self.cluster.new_database()
+        self.cli('pg_restore', restored, '--exit-on-error', '--single-transaction',
+                 '--no-owner', '--no-privileges', str(dump))
+        self.assertEqual(fingerprints(restored), before)
+        self.assertEqual(self.apply(restored, catalogs[7]), (7,))
+        self.assertEqual(self.apply(restored), (8,))
+        self.assertEqual(fingerprints(restored), after7)
+        self.assertEqual(sha256(dump.read_bytes()).hexdigest(), original_hash)
+        compatible = self.rollback_with_current_catalog('step-recovery')
+        self.python(compatible, restored, '-m', 'postgres_migrate')
+        self.old_api(compatible, restored, seed)
+
+    def test_real_database_timeouts_and_sql_errors_are_classified_without_retry(self):
+        from app_database import DatabaseUnavailable, PostgresConnection
+        database = self.cluster.new_database()
+        # A lock held by a separate connection exercises the real configured 10s timeout.
+        with self.cluster.connect(database, autocommit=False) as blocker:
+            blocker.execute('SELECT pg_advisory_xact_lock(731412811)')
+            contender = PostgresConnection(self.cluster.connect(database, autocommit=False))
+            with self.assertLogs('app_database', level='ERROR') as logs:
+                with self.assertRaises(DatabaseUnavailable):
+                    contender.execute('SELECT 1')
+            self.assertEqual(logs.output, ['ERROR:app_database:Database failure: stage=begin category=lock_timeout'])
+        for statement, category in (('SELECT * FROM synthetic_missing_table', 'query_or_schema'),
+                                    ('SELECT pg_sleep(0.05)', 'statement_timeout')):
+            connection = PostgresConnection(self.cluster.connect(database, autocommit=False))
+            try:
+                connection._begin()
+                if category == 'statement_timeout':
+                    connection.raw.execute("SET LOCAL statement_timeout='1ms'")
+                with self.assertLogs('app_database', level='ERROR') as logs:
+                    with self.assertRaises(DatabaseUnavailable):
+                        connection.execute(statement)
+                self.assertEqual(logs.output, ['ERROR:app_database:Database failure: stage=execute category=' + category])
+            finally:
+                connection.close()
 
     @unittest.skipUnless(os.getenv("DALJAM_TEST_RELEASE_DOCKER") == "1", "Opt in on Linux with Docker")
     def test_linux_production_images(self):

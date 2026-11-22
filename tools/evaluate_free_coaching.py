@@ -1,0 +1,96 @@
+"""Reproduce the synthetic before/after review without any model or network.
+
+Run from the repository root: python -B tools/evaluate_free_coaching.py
+The baseline is the user's exact commit, not a rewritten approximation.
+"""
+from html import escape
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
+from coaching_expression import expression_snapshot
+from coaching_session import VERSION, MBTI_STRATEGIES, analyze_session, render_session
+from free_coaching_scenarios import variable_nights, night
+
+BASE = "92640a2d1232a7305885f7a12c1971bdc0b0bdb2"
+
+
+def main():
+    source = subprocess.run(["git", "show", f"{BASE}:coaching_free.py"], cwd=ROOT,
+                            check=True, capture_output=True, encoding="utf-8").stdout
+    baseline = {}
+    exec(compile(source, "baseline-coaching-free.py", "exec"), baseline)
+    selected, recent = variable_nights()
+    analysis = analyze_session(selected, recent, {})
+    variants, tones, before = {}, {}, {}
+    for mbti in MBTI_STRATEGIES:
+        expression = expression_snapshot(dict(mbti=mbti, speech="casual", intensity="direct", allow_profanity=False))
+        variants[mbti] = render_session(analysis, {}, expression)
+        before[mbti] = baseline["session_advice"](selected, recent, {}, expression)
+    for label, intensity, consent in (("A 다정함", "gentle", False), ("B 강한 직설", "direct", False), ("C 강한 직설과 거친 표현 허용", "direct", True)):
+        expression = expression_snapshot(dict(mbti="ISTJ", speech="casual", intensity=intensity, allow_profanity=consent))
+        tones[label] = {"before": baseline["session_advice"](selected, recent, {}, expression),
+                        "after": render_session(analysis, {}, expression)}
+    scenarios = {}
+    for label, manual, many, habits in (("직접 입력 한 건", True, False, {}), ("직접 입력 여러 건과 생활습관", True, True, {"caffeine": "있음", "satisfaction": "나쁨"}),
+                                       ("기기 기록 한 건", False, False, {}), ("기기 기록 여러 건", False, True, {})):
+        record, history = variable_nights(manual=manual)
+        evidence = analyze_session(record, history if many else [], habits)
+        scenarios[label] = render_session(evidence, habits, expression_snapshot(None))
+    assert len(set(before.values())) == 1
+    assert len(set(variants.values())) == 16
+    assert tones["B 강한 직설"]["before"] == tones["C 강한 직설과 거친 표현 허용"]["before"]
+    assert tones["B 강한 직설"]["after"] != tones["C 강한 직설과 거친 표현 허용"]["after"]
+    snapshot = {"baseline": BASE, "engine": VERSION, "data": {"selected": selected, "recent": recent},
+                "facts": analysis["facts"], "before_mbti_unique": 1, "after_mbti_unique": 16,
+                "tones": tones, "types": variants, "scenarios": scenarios}
+    def block(text):
+        return '<p class="output">' + escape(text) + '</p>'
+    rows = ''.join(f'<section><h3>{escape(label)}</h3><div class="pair"><article><h4>개선 전</h4>{block(body["before"])}</article><article><h4>개선 후</h4>{block(body["after"])}</article></div></section>' for label, body in tones.items())
+    types = ''.join(f'<article><h3>{mbti}</h3><p class="strategy">{MBTI_STRATEGIES[mbti][0]}</p>{block(body)}</article>' for mbti, body in variants.items())
+    cases = ''.join(f'<article><h3>{label}</h3>{block(body)}</article>' for label, body in scenarios.items())
+    html = '''<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>달잠 무료 코칭 합성 기록 비교</title><style>
+body{margin:0;background:#f4f3fa;color:#252238;font:16px/1.75 system-ui,sans-serif}main{max-width:1200px;margin:auto;padding:24px}h1{font-size:28px}h2{margin-top:48px}article{background:white;border:1px solid #dcd8ea;border-radius:16px;padding:20px;min-width:0}.pair,.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.output{white-space:pre-wrap;overflow-wrap:anywhere}.strategy{font-size:14px;color:#635c7e}.note{padding:16px;background:#e9e4f7;border-radius:12px}section{margin:24px 0}@media(max-width:700px){main{padding:16px}.pair,.grid{grid-template-columns:1fr}h1{font-size:24px}}
+</style><main><h1>달잠 무료 코칭 합성 기록 비교</h1>
+<p class="note">모든 날짜와 기록은 테스트용 합성 데이터입니다. 실제 사용자 정보와 외부 AI 호출은 없습니다. MBTI는 실행 방법에 관한 설계 가설이며 성격이나 수면 생리를 판단하지 않습니다.</p>
+<p>동일 자료: 직접 입력한 추정 수면 시간 6시간 30분, 비교 가능한 3일의 시작 시각 범위 1시간 30분. 기상 시각은 모두 07:00입니다.</p>
+<p>기준 92640a2 → session-rules-v2. 동일 자료의 16개 MBTI 출력은 개선 전 1종, 개선 후 16종입니다. 관찰 수치는 유형별로 동일합니다.</p>
+<h2>어투와 동의 비교</h2>''' + rows + '''<h2>16개 유형의 실제 출력</h2><p>반말·강한 직설·거친 표현 미허용으로 통일했습니다. 아래의 차이는 같은 행동을 실천하는 도구, 계획 방식과 확인 기준입니다.</p><div class="grid">''' + types + '''</div><h2>기록과 생활습관별 출력</h2><div class="grid">''' + cases + '''</div>
+<h2>품질 검토</h2><ul><li>기록 충실성: 유형과 어투에 관계없이 같은 날짜·시간·비교 수치를 사용합니다.</li><li>개인화: 실행 도구, 개인 메모와 선택적 약속, 고정 계획과 유연한 선택, 수치 비교와 부담 점검을 구분합니다.</li><li>직설: 다정한 권유형 문장과 달리 짧은 지시문·우선순위·실행 후 확인을 사용합니다. 존댓말 여부는 별도로 유지합니다.</li><li>동의: 미허용이면 거친 표현이 없습니다. 허용해도 모든 기록에 강제로 넣지 않습니다.</li><li>한계: 수동 입력을 추정치로 명시하며, 기록이 적거나 시각 비교 조건이 다른 경우에만 해당 한계를 알립니다.</li><li>반복: 같은 입력은 무작위로 바꾸지 않습니다. 다른 관찰에는 다른 행동을 고르지만 같은 상황의 조언이 반복될 수 있습니다.</li><li>평가는 합성 자료에 대한 코드 검사와 문장 검토이며, 임상 효과나 실제 사용자 만족도를 검증한 결과는 아닙니다.</li></ul></main></html>'''
+    audit = '''<h2>기존 설정 경로와 원인</h2>
+<table><tr><th>항목</th><th>실제 코드에서 확인한 내용</th></tr>
+<tr><td>가입과 온보딩</td><td>계정 생성 뒤 별도의 /auth/personalization 완료 요청으로 account_personalization에 mbti, speech, intensity, allow_profanity, character를 저장합니다. 설정 조회는 계정 인증과 private, no-store를 사용합니다.</td></tr>
+<tr><td>무료 생성 경로</td><td>현재 웹의 /coach/free와 건강앱 자동 코칭은 generate_free → session_advice 경로였습니다. expression은 전달됐지만 MBTI와 동의는 사용되지 않았고, 단호함과 강한 직설은 같은 종결형이었습니다.</td></tr>
+<tr><td>동의가 사라지는 원인</td><td>UI의 changeIntensity가 동의를 false로 초기화했고 API·DB는 direct에서만 true를 허용했습니다. 이제 기존 enum 값과 boolean 기본값을 유지하면서 독립 설정으로 저장합니다.</td></tr>
+<tr><td>캐시</td><td>기존 키는 선택 기록 요약과 완성 문장뿐이었습니다. 이제 엔진 버전, 설정 스냅샷, 생활습관, 선택·참고 기록의 버전을 포함합니다. 화면용 coaching_count는 기록 버전에서 제외합니다. 재사용 시 당시 저장된 context를 반환하며 과거 원문은 수정하지 않습니다.</td></tr>
+<tr><td>프런트엔드</td><td>현재 CoachingAdvice는 저장 본문을 그대로 세 섹션으로 나누며 존댓말로 재작성하지 않습니다. 호환용 coaching-body.ts도 서버 expression이 있는 원문을 보존합니다. 이번 문제의 원인은 화면 재작성으로 확인되지 않았습니다.</td></tr></table>
+<h2>분석과 적용 범위</h2>
+<p>관찰 계산과 문장 생성을 분리했습니다. 같은 입력 방식의 최근 기록에서 날짜·겹침·시간대 조건을 확인하고, 시각 변동, 평소 입력 시각보다 반복해서 늦은 시작, 이전 평균보다 짧은 기록, 직전 기록과의 차이, 직접 입력한 카페인·만족도 중 우선 항목을 선택합니다. 최대 두 행동을 제시합니다. 45분·35분 기준은 주제를 고르는 제품 규칙이며 의학적 기준이 아닙니다.</p>
+<p>자정은 시계의 최소 원호로 비교하며 시간대 변경·서머타임·여러 구간의 밤에는 시각 변동을 보류합니다. 실제 경과 시간과 기록 방식별 수면 시간은 구분합니다. 나이·생활습관을 미입력하면 추정하지 않습니다. MBTI 미설정은 중립적인 전달 방식을 사용합니다.</p>
+<p>개선 대상은 현재 웹 무료 요청과 건강앱 자동 코칭입니다. 호환용 /coach의 이전 표현·분석 계약과 Premium 모델 어댑터는 보존했습니다. 수동 기록과 자동 연동 기록 모두 새 무료 엔진을 사용하지만 측정 통계에 수동 추정치를 합산하지 않습니다.</p>
+<p>말투 polite/casual과 강도 gentle/firm/direct는 별도입니다. 존댓말을 선택한 강한 직설은 존댓말 지시문을 유지합니다. 동의는 모든 강도에서 저장되지만 거친 표현을 반드시 넣지는 않습니다. 현재 엔진은 관찰된 시각·시간 차이가 있는 강한 직설에서만 제한적으로 사용합니다. 미허용으로 바꾼 뒤 새 조언은 거친 표현을 사용하지 않으며 과거 원문은 그대로 보존합니다.</p>
+<h2>로컬 검증 화면</h2><p>합성 계정의 실제 브라우저 캡처입니다. 상태를 바꾼 뒤에도 과거 직설 원문이 유지되고, 새 생성에는 다정함·미허용이 적용됐습니다. 실제 iPhone·Android 기기 검증은 수행하지 않았습니다.</p>
+<p><a href="free-coaching-quality/coaching-390.jpg">강한 직설과 동의</a> · <a href="free-coaching-quality/consent-dialog.jpg">독립 동의 팝업</a> · <a href="free-coaching-quality/gentle-320.jpg">320px</a> · <a href="free-coaching-quality/gentle-390.jpg">390px</a> · <a href="free-coaching-quality/gentle-430.jpg">430px</a> · <a href="free-coaching-quality/gentle-1280.jpg">1280px</a></p>
+<h2>통합 시 확인할 사항</h2><ol><li>팀원이 진행 중인 v2 배포를 마친 뒤 최신 v2와 이 독립 로컬 커밋의 차이를 비교합니다. 이번 작업은 Push·PR·운영 변경을 하지 않습니다.</li><li>기존 0001~0007 SQL을 수정하지 않고 0008_independent_coaching_consent.sql을 추가했습니다. 기존 행과 enum·boolean·FK 검증은 유지하고 강도·동의의 결합 제약만 완화합니다. SQLite의 구형 제약은 원자적 복사로 보존하며 실패 시 롤백합니다.</li><li>운영 적용은 백업·복원 가능 여부와 독립 PostgreSQL 검증 후 담당자가 수행해야 합니다. 새 앱의 준비 검사는 0008까지 요구하며 기존 v2 서버는 앞선 스키마를 거부합니다. 스키마 이력만 지우거나 구버전 이미지만 되돌리는 방식은 사용하지 않습니다. 호환 롤백 후보 또는 별도 복원 DB를 준비해야 합니다.</li><li>서버와 독립 동의 UI를 함께 통합하고 무료 코칭·로그인·Health Connect·JSON·아침 계획·PWA 회귀 검사를 다시 실행합니다. 엔진의 문장·분석 규칙을 바꾸는 후속 수정에서는 VERSION도 갱신합니다.</li></ol>
+<p>검사 명령: python -B -m unittest discover -s tests; DALJAM_TEST_POSTGRES_BIN을 격리 테스트 도구 경로로 지정하면 PostgreSQL 검사 포함; node --experimental-strip-types --test tests/*.test.mjs; tsc --noEmit; next build. 비교 재생성: python -B tools/evaluate_free_coaching.py. 외부 AI·유료 서비스 호출 없이 로컬 자원과 합성 데이터만 사용합니다.</p>'''
+    verification = '''<h2>검증 결과 2026년 11월 22일</h2>
+<table><tr><th>검사</th><th>최종 결과</th></tr><tr><td>전체 Python·SQLite와 실제 로컬 HTTP</td><td>219개 중 193개 통과, PostgreSQL 등 환경 조건 26개 생략</td></tr><tr><td>전체 격리 PostgreSQL·API·마이그레이션·백업 복구·로컬 HTTP</td><td>219개 중 214개 통과, 환경 조건 5개 생략</td></tr><tr><td>코칭 조합·계정 격리·캐시·SQLite 업그레이드</td><td>12개 테스트 통과. 내부에서 1536개 합성 조합을 검증</td></tr><tr><td>PostgreSQL 코칭 집중 재검증</td><td>각 관련 검사를 3회씩 실행, 총 93개 통과</td></tr><tr><td>웹 자동 검사</td><td>54개 모두 통과</td></tr><tr><td>TypeScript·Next.js 프로덕션 빌드</td><td>통과. Windows 샌드박스의 standalone 복사 EPERM 이후 동일 worktree에서 권한을 확보한 빌드로 통과</td></tr><tr><td>브라우저</td><td>합성 계정 로그인, 과거 원문 유지, 설정 변경 후 새 생성 확인. 320·390·430·1280px에서 가로 넘침 없음. 실제 휴대폰·VoiceOver는 미검증</td></tr></table>
+<p>초기 전체 PostgreSQL 실행에서 서로 다른 API에 간헐적 DB 503이 관찰됐습니다. 실제 오류를 숨기거나 성공 조건을 완화하지 않았습니다. 비밀값을 제외한 예외 진단을 유지한 최종 전체 실행과 93개 집중 검사에서는 재현되지 않았습니다. 원인은 확정하지 않았으며 팀원 통합 전 Linux CI에서 추가 관찰이 필요합니다. Docker 소스 의존성 검사는 통과했지만 실제 Linux Docker 실행은 이번에 수행하지 않았습니다.</p>
+<p>APK SHA-256은 95d84e979b72d1f150c59c0cdb33a6d70fa63e0adbeba05ab57a64c699eae05e로 기준과 동일합니다. A안 스타일·수동 폼·Health Connect·iPhone 가져오기·PWA·Premium 제품 소스는 변경하지 않았습니다. 비용은 0원이며 외부 모델 호출, Push·PR·Render 배포, 운영 DB 변경은 없습니다.</p>'''
+    html = html.replace('</main></html>', audit + verification + '</main></html>')
+    output = ROOT / "docs" / "free-coaching-quality-comparison.html"
+    output.write_text(html, encoding="utf-8")
+    runtime = ROOT / "sleep_frontend" / ".runtime"
+    runtime.mkdir(exist_ok=True)
+    (runtime / "coaching-quality-results.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("Synthetic comparison generated: before MBTI variants=1; after=16; B/C consent distinction verified")
+    for label, body in tones.items():
+        print("\n" + label + "\n" + body["after"])
+
+
+if __name__ == "__main__":
+    main()

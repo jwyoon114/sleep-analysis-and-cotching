@@ -1,11 +1,11 @@
 "use client";
 
 import {useCallback, useEffect, useMemo, useRef, useState, type FormEvent} from "react";
-import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, CloudUpload, Coffee, FileJson, FileText, Heart, LoaderCircle, Moon, Plus, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, X} from "lucide-react";
-import {api, ApiError, clock, colors, compare, daily, labels, minutes, shortDate, today, type Coaching, type Daily, type SleepRecord, type Trash, type User} from "@/lib/sleep";
+import {ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, CloudUpload, FileJson, FileText, Heart, LoaderCircle, Moon, Plus, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, X} from "lucide-react";
+import {api, ApiError, clock, colors, compare, daily, labels, minutes, recordDuration, shortDate, today, type Coaching, type Daily, type ManualSleepInput, type ManualSleepRecord, type SleepRecord, type Trash, type User} from "@/lib/sleep";
 import {sleepStageBreakdown} from "@/lib/sleep-stage-breakdown";
 import {demoCoaching, demoRecords} from "@/lib/demo";
-import {coachingDataNotes} from "@/lib/coaching-body";
+import {manualCoachingSource} from "@/lib/coaching-body";
 import {installPlatform, type InstallPlatform} from "@/lib/install-platform";
 import RegistrationConsent from "./registration-consent";
 import SleepTimeline from "./sleep-timeline";
@@ -14,6 +14,10 @@ import HomeDataConnection from "./home-data-connection";
 import {homeSummary} from "@/lib/home-summary";
 import SleepPlan from "./sleep-plan";
 import MobileRecordList from "./mobile-record-list";
+import CoachingHabits from "./coaching-habits";
+import ManualSleepForm from "./manual-sleep-form";
+import PremiumDemo, {PremiumEntry} from "./premium-demo";
+import type {PremiumStatus} from "@/lib/premium";
 import MobileProfile from "./mobile-profile";
 import IphoneSleepGuide from "./iphone-sleep-guide";
 import {InstallHelpButton} from "./pwa-install";
@@ -26,16 +30,18 @@ import HealthConnect, {stopNativeHealth, type AndroidConnection} from "./health-
 import CoachingStylePreview, { CoachingAdvice } from "./coaching-style-preview";
 import {CHARACTERS, type CharacterId, type MbtiType} from "@/lib/coaching-preview";
 
-type Page = MainTab | "recordDetail" | "coaching" | "comparison" | "trash" | "accountSettings";
+type Page = MainTab | "recordDetail" | "coaching" | "comparison" | "trash" | "accountSettings" | "manualSleep" | "premium";
 type Confirmation = {title:string; description:string; permanent?:boolean; run:()=>Promise<void>};
 type CoachingHistory = {recordId:string; status:"loading"|"ready"|"error"; items:Coaching[]};
 type CoachingRequestState = {recordId:string; kind:"submitting"} | {recordId:string; kind:"error"; status:number|null};
 const titles: Record<Page,[string,string]> = {
   dashboard:["최근 수면 요약",""],
   records:["기록","나의 수면 기록과 변화를 살펴보세요."],
-  recordDetail:["기록 상세보기",""], coaching:["AI 코칭",""], comparison:["기간별 비교",""],
+  recordDetail:["기록 상세보기",""], coaching:["수면 코칭",""], comparison:["기간별 비교","기기로 기록한 수면 시간을 비교해요."],
   plan:["계획","내일은 더 개운하게."], account:["마이페이지","나만의 달잠을 설정해 보세요."],
   accountSettings:["계정 정보 및 관리",""], trash:["휴지통·백업",""],
+  manualSleep:["수면 시간 직접 입력",""],
+  premium:["달잠 Premium","나에게 맞는 코칭을 만나보세요."],
 };
 
 function Mark({small=false}:{small?:boolean}) {return <div className={`brand ${small?"brand-small":""}`}><span className="brand-icon"><Moon size={small?21:24} strokeWidth={1.6}/><i/></span><span>달잠<small>나의 수면 리포트</small></span></div>;}
@@ -89,6 +95,7 @@ export default function SleepApp() {
   const keyboardOpen=useMobileKeyboard();
   const [boot,setBoot]=useState(true),[user,setUser]=useState<User|null>(null),[demo,setDemo]=useState(false);
   const [page,setPage]=useState<Page>("dashboard"),[records,setRecords]=useState<SleepRecord[]>([]),[selected,setSelected]=useState("");
+  const [manualDraft,setManualDraft]=useState<{from:Page; record?:ManualSleepRecord}|null>(null);
   const [coachingBack,setCoachingBack]=useState<"dashboard"|"recordDetail">("dashboard");
   const [coachHistory,setCoachHistory]=useState<CoachingHistory|null>(null);
   const [coachRequest,setCoachRequest]=useState<CoachingRequestState|null>(null);
@@ -97,7 +104,9 @@ export default function SleepApp() {
   const [demoCharacter, setDemoCharacter] = useState<CharacterId>("cat");
   const [profileState,setProfileState]=useState<{owner:string;profile:Personalization|null;error?:string}|null>(null);
   const [profileRetry,setProfileRetry]=useState(0);
+  const [premiumState,setPremiumState]=useState<{owner:string;available:boolean}|null>(null);
   const accountId=user?.id;
+  const premiumAvailable=!demo&&premiumState?.owner===accountId&&premiumState?.available===true;
   const accountProfile=profileState?.owner===accountId?profileState:null;
   const profile=accountProfile?.profile??null;
   const readyForRecords=demo||profile!==null;
@@ -145,8 +154,17 @@ export default function SleepApp() {
     window.addEventListener("daljam-native-ready",update);
     return()=>window.removeEventListener("daljam-native-ready",update);
   },[]);
-  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setRecordsStatus("loading");setNativeHealth(null);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
+  const reset=useCallback(()=>{setUser(null);setDemo(false);setRecords([]);setRecordsStatus("loading");setManualDraft(null);setNativeHealth(null);setCoachHistory(null);setCoachRequest(null);setCoachingId("");setTrash({sessions:[],coaching:[]});setSelected("");setPage("dashboard");setCoachingBack("dashboard");setBackup(null);setUploadView(null);setConfirmation(null);setDemoMbti(null);setDemoCharacter("cat");setProfileState(null);setProfileRetry(0);},[]);
   useEffect(()=>{const query=new URLSearchParams(window.location.search);if(query.get("tab")==="plan")setPage("plan");if(query.get("demo")==="1"){setDemo(true);setUser({id:"demo",username:"체험"});setBoot(false);return;} const c=new AbortController();api<{user:User}>("auth/me","GET",undefined,c.signal).then(r=>setUser(r.user)).catch(e=>{if(e.name!=="AbortError"&&e.status!==401)setError(e.message);}).finally(()=>setBoot(false));return()=>c.abort();},[]);
+  useEffect(()=>{
+    setPremiumState(null);
+    if(!accountId||demo)return;
+    const controller=new AbortController();
+    api<PremiumStatus>("premium","GET",undefined,controller.signal)
+      .then(value=>{if(!controller.signal.aborted)setPremiumState({owner:accountId,available:value.demo_available===true});})
+      .catch(()=>{if(!controller.signal.aborted)setPremiumState({owner:accountId,available:false});});
+    return()=>controller.abort();
+  },[accountId,demo]);
   useEffect(()=>{
     if(!accountId||demo)return;
     const controller=new AbortController();
@@ -221,7 +239,7 @@ export default function SleepApp() {
     return()=>{cancelAnimationFrame(frame);window.removeEventListener("keydown",close);document.body.style.overflow=overflow;previous?.focus({preventScroll:true});};
   },[upload,confirmation,busy]);
   const record=records.find(s=>s.analysis_id===selected);
-  const stageBreakdown=page==="recordDetail"&&record?sleepStageBreakdown(record):null;
+  const stageBreakdown=page==="recordDetail"&&record&&record.data_type!=="manual"?sleepStageBreakdown(record):null;
   const dashboardHistory=latest && coachHistory?.recordId===latest.analysis_id ? coachHistory : null;
   const dashboardCoaching=dashboardHistory?.items[0];
   const rows=useMemo(()=>daily(records,end,days),[records,end,days]);
@@ -235,9 +253,9 @@ export default function SleepApp() {
   const requestInFlight=activeRequest?.kind==="submitting";
   const requestFailure=activeRequest?.kind==="error" ? activeRequest : null;
   const savedDate=saved ? coachingDate(saved.created_at) : null;
-  const savedNotes=saved && page==="coaching" ? coachingDataNotes(saved.coaching,saved.context) : [];
+  const manualSource=manualCoachingSource(saved?.context);
   let recordNote="";
-  if(record){
+  if(record&&record.data_type!=="manual"){
     if(!Number.isFinite(record.asleep_minutes)||record.asleep_minutes<0){
       recordNote="선택한 기록에서 수면 시간을 확인할 수 없어요. 기기 앱에서 기록을 확인해 주세요.";
     }else if(Number.isFinite(record.unrecorded_minutes)&&record.unrecorded_minutes>0){
@@ -247,22 +265,18 @@ export default function SleepApp() {
 
   function reloadCoachingHistory(){setCoachingRevision(n=>n+1);}
 
-  async function requestCoaching(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();
-    if(busy||coachLoading||!record)return;
+  async function requestCoaching(recordId:string){
     if(demo){setNotice("체험 모드예요. 로그인하면 내 수면 기록으로 조언을 요청할 수 있어요.");return;}
-    const recordId=record.analysis_id;
-    const lifestyle=Object.fromEntries(new FormData(event.currentTarget));
     setBusy(true);
     setError("");
     setCoachRequest({recordId,kind:"submitting"});
     try{
-      const result=await api<Pick<Coaching,"id">>("coach","POST",{analysis_id:recordId,...lifestyle});
+      const result=await api<Pick<Coaching,"id"> & {reused:boolean}>("coach/free","POST",{analysis_id:recordId});
       if(typeof result?.id!=="string"||!result.id)throw new Error("Invalid coaching response");
       setCoachingId(result.id);
       setCoachRequest(null);
       setRevision(n=>n+1);
-      setNotice("새 수면 조언을 저장했어요.");
+      setNotice(result.reused?"이미 저장된 수면 조언을 열었어요.":"새 수면 조언을 저장했어요.");
     }catch(error){
       if(error instanceof ApiError&&error.status===401){reset();setError(error.message);return;}
       setCoachRequest({recordId,kind:"error",status:error instanceof ApiError?error.status:null});
@@ -282,6 +296,31 @@ export default function SleepApp() {
     if(latest)setSelected(latest.analysis_id);
     if(destination==="coaching" && dashboardCoaching)setCoachingId(dashboardCoaching.id);
     navigate(destination);
+  }
+  function openManual(record?:ManualSleepRecord){
+    setManualDraft({from:page,record});
+    navigate("manualSleep");
+  }
+  async function saveManual(values:ManualSleepInput){
+    const id=manualDraft?.record?.analysis_id;
+    try{
+      const result=await api<{record:ManualSleepRecord;created:boolean}>(id?`watch/manual-sessions/${id}`:"watch/manual-sessions",id?"PATCH":"POST",values);
+      const saved=result.record;
+      setRecords(current=>[
+        {...saved,coaching_count:current.find(item=>item.analysis_id===saved.analysis_id)?.coaching_count??0},
+        ...current.filter(item=>item.analysis_id!==saved.analysis_id),
+      ].sort((a,b)=>Date.parse(b.start)-Date.parse(a.start)));
+      setSelected(saved.analysis_id);
+      setRevision(n=>n+1);
+      setManualDraft(null);
+      navigate("coaching");
+      setCoachingBack("recordDetail");
+      setNotice(id?"수동 수면 기록을 수정했어요.":"수동 수면 기록을 저장했어요.");
+      await requestCoaching(saved.analysis_id);
+    }catch(error){
+      if(error instanceof ApiError&&error.status===401){reset();setError(error.message);return;}
+      throw error;
+    }
   }
   function logout(){
     if(demo){reset();window.history.replaceState(null,"",window.location.pathname);return;}
@@ -352,10 +391,10 @@ export default function SleepApp() {
   }
 
 
-  const recordSelector=<select aria-label="분석할 수면 기록" value={selected} onChange={e=>setSelected(e.target.value)}>{records.map(r=><option key={r.analysis_id} value={r.analysis_id}>{shortDate(r.start)} · {clock(r.start)} · {minutes(r.asleep_minutes)}</option>)}</select>;
+  const recordSelector=<select aria-label="분석할 수면 기록" value={selected} onChange={e=>setSelected(e.target.value)}>{records.map(r=><option key={r.analysis_id} value={r.analysis_id}>{shortDate(r.start)} · {clock(r.start)} · {recordDuration(r)}</option>)}</select>;
 
-  const activeTab:MainTab = page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
-  const backTo:Page|null = page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
+  const activeTab:MainTab = page==="premium"?"dashboard":page==="manualSleep"?(manualDraft?.from==="recordDetail"?"records":manualDraft?.from==="account"?"account":"dashboard"):page==="recordDetail"||page==="comparison"?"records":page==="trash"||page==="accountSettings"?"account":page==="coaching"?(coachingBack==="recordDetail"?"records":"dashboard"):page;
+  const backTo:Page|null = page==="premium"?"dashboard":page==="manualSleep"?manualDraft?.from??"dashboard":page==="recordDetail"||page==="comparison"?"records":page==="accountSettings"||page==="trash"?"account":page==="coaching"?coachingBack:null;
   const illustrated=page==="dashboard"||page==="records"||page==="plan"||page==="account"||page==="coaching";
   const summary=homeSummary(latest,recordsStatus);
   return <div className="mobile-app" data-daljam-theme={characterId} data-screen={page} data-keyboard-open={keyboardOpen||undefined}>
@@ -383,10 +422,22 @@ export default function SleepApp() {
       onCoaching={()=>openDashboardPage("coaching")}
       onRetryCoaching={reloadCoachingHistory}
       onMorningPlan={()=>navigate("plan")}
+      onManualEntry={demo?undefined:()=>openManual()}
     />}
 
+    {page==="dashboard"&&premiumAvailable&&<PremiumEntry onOpen={()=>navigate("premium")}/>}
+    {page==="premium"&&premiumAvailable&&<PremiumDemo key={`premium-${user.id}`} onManualSaved={()=>setRevision(value=>value+1)}/>}
+    {page==="manualSleep"&&manualDraft&&<ManualSleepForm record={manualDraft.record} onSave={saveManual} onCancel={()=>navigate(manualDraft.from)}/>}
     <div hidden={page!=="records"}><MobileRecordList records={records} loading={loading} onOpen={id=>{setSelected(id);navigate("recordDetail");}} onUpload={openUpload} onCompare={()=>navigate("comparison")}/></div>
-    {page==="recordDetail"&&<section className="panel record-detail">{record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>실제 수면 시간</span><strong>{minutes(stageBreakdown?.sleepMinutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3>{stageBreakdown&&<StageChart breakdown={stageBreakdown}/>}<details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions">{(record.coaching_count>0||demo)&&<button className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>이날의 코칭 보기</button>}<button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 AI 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
+    {page==="recordDetail"&&<section className="panel record-detail">{record?.data_type==="manual"?<><div className="panel-heading"><div><h2 className="detail-title">직접 입력한 수면 기록</h2><p>{shortDate(record.start)} {clock(record.start)} – {shortDate(record.end)} {clock(record.end)} · {record.timezone}</p></div></div>
+      <div className="detail-metrics"><div><span>추정 수면 시간</span><strong>{minutes(record.estimated_sleep_minutes)}</strong></div></div>
+      <p className="disclaimer">취침·기상 시각으로 계산한 추정치예요. 수면 단계와 실제 수면 시간은 측정하지 않았어요.</p>
+      <div className="detail-actions">
+        <button type="button" className="button secondary" onClick={()=>openManual(record)}>기록 수정</button>
+        <button type="button" className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>이 기록으로 코칭 받기</button>
+        <button type="button" className="text-button danger" disabled={busy} onClick={()=>ask("수동 기록을 휴지통으로 옮길까요?","이 기록과 연결된 코칭을 30일 안에 복원할 수 있어요.",async()=>{await api(`watch/sessions/${record.analysis_id}`,"DELETE");setRevision(n=>n+1);navigate("records");})}><Trash2 size={15}/>기록 삭제</button>
+      </div>
+    </>:record?<><div className="panel-heading"><div><Tag>SLEEP REPORT</Tag><h2 className="detail-title">{shortDate(record.start)}의 밤</h2><p>{clock(record.start)} – {clock(record.end)} · {record.timezone}</p></div><button className="icon-button" onClick={exportRecord} aria-label="선택 기록 JSON 다운로드"><ArrowDownToLine size={19}/></button></div><div className="detail-metrics"><div><span>실제 수면 시간</span><strong>{minutes(stageBreakdown?.sleepMinutes)}</strong></div><div><span>각성 시간</span><strong>{minutes(record.awake_minutes)}</strong></div><div><span>각성 구간</span><strong>{record.wake_segment_count}<small> 회</small></strong></div></div><SleepTimeline key={record.analysis_id} record={record} compact/><h3 className="section-subtitle">수면 단계 비율</h3>{stageBreakdown&&<StageChart breakdown={stageBreakdown}/>}<details><summary>수면·각성 구간 전체 보기<ChevronDown size={16}/></summary><div className="table-scroll"><table><thead><tr><th>시작</th><th>종료</th><th>단계</th><th>분</th></tr></thead><tbody>{record.segments.map((s,i)=><tr key={i}><td>{clock(s.start)}</td><td>{clock(s.end)}</td><td><span className="table-dot" style={{background:colors[s.stage]}}/>{labels[s.stage]}</td><td>{Math.round(s.minutes)}</td></tr>)}</tbody></table></div></details><h3 className="section-subtitle">함께 측정된 생체지표</h3>{record.vitals_summary.length?<div className="vitals-grid">{record.vitals_summary.map((v,i)=><div key={i}><Heart size={16}/><span>{({heartRate:"심박수",hrvSDNN:"심박변이도",respiratoryRate:"호흡수",oxygenSaturation:"산소포화도"} as Record<string,string>)[v.metric]||v.metric}</span><strong>{v.avg} <small>{v.unit}</small></strong><small>표본 {v.n}개 · {v.min}–{v.max}</small></div>)}</div>:<p className="muted">이 기록에는 생체지표 요약이 없습니다.</p>}<section className="record-insights"><h3>수면 분석 인사이트</h3>{record.unrecorded_minutes>0?<p>기록이 비어 있는 구간이 {minutes(record.unrecorded_minutes)}이에요.</p>:<p>기기가 분류한 각성 구간 {record.wake_segment_count}회를 확인했어요.</p>}</section>{record.warnings?.map((w,i)=><div className="soft-warning" key={i}>{w}</div>)}<div className="detail-actions"><button className="button secondary" onClick={()=>{setCoachingId("");navigate("coaching");}}><Sparkles size={16}/>{record.coaching_count>0?"이날의 코칭 보기":"이날의 무료 코칭 받기"}</button><button className="text-button danger" disabled={busy} onClick={()=>ask("분석 기록을 휴지통으로 옮길까요?","연결된 코칭도 함께 숨겨지며, 30일 안에 복원할 수 있습니다.",async()=>{await api(`watch/sessions/${selected}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={15}/>기록 삭제</button></div><p className="disclaimer">웨어러블 기기의 추정 기록이며, 수면검사나 진단 결과가 아닙니다.</p></>:<Empty title="어떤 밤을 살펴볼까요?"><p>수면 기록을 추가하거나 목록의 기록을 선택해 주세요.</p></Empty>}</section>}
 
     <div hidden={page!=="account"}>
       <MobileProfile username={user.username} preferences={demo ? <>
@@ -395,7 +446,7 @@ export default function SleepApp() {
         <label className="profile-setting">캐릭터<select value={demoCharacter} onChange={event=>setDemoCharacter(event.target.value as CharacterId)}>
           {CHARACTERS.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onIphoneGuide={isAppleMobile&&!demo?openIphoneGuide:undefined} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced} onAndroidStatus={handleAndroidStatus}/>}/>
+      </> : profile && <ProfilePreferences key={user.id} profile={profile} onSave={values=>savePreferences(values,"PATCH")}/>} onAccount={()=>navigate("accountSettings")} onPlan={()=>navigate("plan")} onTrash={()=>navigate("trash")} onUpload={openUpload} onIphoneGuide={isAppleMobile&&!demo?openIphoneGuide:undefined} onLogout={logout} demo={demo} busy={busy} health={!demo&&<HealthConnect key={user.id} user={user} onSynced={healthSynced} onAndroidStatus={handleAndroidStatus} onManualEntry={()=>openManual()}/>}/>
     </div>
     <SleepPlan key={user.id} active={page==="plan"} coaching={saved} demo={demo}/>
 
@@ -409,8 +460,8 @@ export default function SleepApp() {
           <section className="panel saved-coaching">
             <div className="panel-heading"><div className="inline-title"><span className="spark-icon"><Sparkles size={19}/></span><h2>나의 수면 코칭</h2></div><Tag>PERSONAL COACH</Tag></div>
             {!demo && <aside className="coaching-data-guide" aria-label="수면 수치 안내">
-              <strong>기기가 추정한 수면 수치예요</strong>
-              <p>수면·각성 시간은 기기가 분류한 구간을 바탕으로 한 추정치예요. 수면 기록을 이해하는 데 참고해 주세요.</p>
+              <strong>{record?.data_type==="manual"?"내가 입력한 시각으로 계산한 추정치예요":"기기가 추정한 수면 수치예요"}</strong>
+              <p>{record?.data_type==="manual"?"취침·기상 시각과 저장된 이전 기록을 바탕으로 생활 습관 코칭을 제공해요.":"수면·각성 시간은 기기가 분류한 구간을 바탕으로 한 추정치예요. 수면 기록을 이해하는 데 참고해 주세요."}</p>
             </aside>}
             {coaching.length>0 && <label className="history-selector">저장된 코칭 {coaching.length}건<select value={coachingId} onChange={e=>setCoachingId(e.target.value)}>{coaching.map((c,index)=><option value={c.id} key={c.id}>{demo?"가상 체험용 코칭":coachingDate(c.created_at) ?? `저장된 조언 ${index+1}`}</option>)}</select></label>}
             {coachLoading ? <div className="coaching-history-state" role="status"><Busy text="저장된 코칭 불러오는 중"/></div>
@@ -421,33 +472,25 @@ export default function SleepApp() {
               </div>
               : saved ? <>
                 {demo ? <p className="coach-timestamp">화면 체험용 예시</p> : <>
-                  <div className="coaching-data-guide">
-                    <strong>조언을 만들 때 참고한 기록</strong>
-                    <p>저장된 조언은 생성 당시의 수면 기록과 생활습관 입력을 기준으로 해요.</p>
-                    {savedNotes.length>0 && <ul>{savedNotes.map(note=><li key={note}>{note}</li>)}</ul>}
-                  </div>
+                  {manualSource&&<div className="coaching-data-guide" aria-label="코칭 생성 방식">
+                    <strong>{manualSource.title}</strong><p>{manualSource.description}</p>
+                  </div>}
+                  {!manualSource && saved.context?.engine==="rules" && <p className="coach-timestamp">규칙 기반 조언</p>}
+                  <p className="coach-timestamp">이번 조언은 생성 당시 저장된 수면 기록을 참고했어요.</p>
                   {savedDate && <div className="coach-timestamp"><Sparkles size={13}/><span><time dateTime={saved.created_at}>{savedDate}</time>에 생성</span></div>}
                 </>}
                 <CoachingAdvice body={saved.coaching} characterId={characterId}/>
-                <details><summary>생성 근거와 생활습관 보기<ChevronDown size={16}/></summary>
-                  {saved.context?<><p>모델: {saved.context.model}<br/>지침: {saved.context.prompt_version}<br/>참고 기록: {saved.context.record_count}회</p><pre>{JSON.stringify(saved.context.input_summary,null,2)}</pre></>:<p className="muted">이 코칭의 생성 근거는 저장되어 있지 않습니다.</p>}
-                  {saved.lifestyle&&<div className="lifestyle-summary">{Object.entries(saved.lifestyle).map(([k,v])=><span key={k}>{({age_group:"연령",caffeine:"카페인",regularity:"규칙성",satisfaction:"만족도"} as Record<string,string>)[k]||k}: {v}</span>)}</div>}
-                </details>
                 <button className="text-button danger" disabled={busy} onClick={()=>ask("이 코칭을 삭제할까요?","선택한 코칭만 휴지통으로 옮깁니다. 수면 분석 기록은 유지됩니다.",async()=>{await api(`watch/sessions/${selected}/coaching/${saved.id}`,"DELETE");setRevision(n=>n+1);})}><Trash2 size={14}/>선택한 코칭 삭제</button>
               </> : <div className="coaching-history-state">
                 <Sparkles size={23} aria-hidden="true"/>
                 <h3>아직 저장된 조언이 없어요</h3>
-                <p>{requestFailure ? "요청 안내를 확인한 뒤 필요하면 조언을 다시 요청해 주세요." : "생활습관을 선택하고 ‘나에게 맞는 코칭 생성’을 눌러 첫 조언을 받아 보세요."}</p>
+                <p>{requestFailure ? "요청 안내를 확인한 뒤 필요하면 조언을 다시 요청해 주세요." : record?.data_type==="manual" ? "입력한 수면 기록으로 첫 조언을 받아 보세요." : "저장된 수면 기록으로 첫 조언을 받아 보세요."}</p>
               </div>}
-            <p className="disclaimer">AI 코칭은 생활습관 참고용입니다. 질환의 진단이나 치료를 대신하지 않습니다.</p>
+            <p className="disclaimer">수면 코칭은 생활습관 참고용입니다. 질환의 진단이나 치료를 대신하지 않습니다.</p>
           </section>
           <section className="panel coach-form-panel">
-            <div className="panel-heading"><div><span className="eyebrow">A LITTLE ABOUT YOUR DAY</span><h2>오늘의 나를 알려주세요</h2><p>입력한 생활습관을 코칭에 참고해요.</p></div></div>
-            <form onSubmit={requestCoaching}>
-              {[{name:"age_group",label:"연령 구분",icon:Sun,options:["미입력","성인","미성년자"]},{name:"caffeine",label:"취침 전 6시간 이내 카페인",icon:Coffee,options:["미입력","없음","있음"]},{name:"regularity",label:"평소 취침·기상 시간",icon:Clock3,options:["미입력","대체로 일정함","자주 달라짐"]},{name:"satisfaction",label:"나의 수면 만족도",icon:Moon,options:["미입력","좋음","보통","나쁨"]}].map(({name,label,icon:Icon,options})=>
-                <label key={name}><span><Icon size={16}/>{label}</span><select name={name}>{options.map(o=><option key={o}>{o}</option>)}</select></label>
-              )}
-              <div className="soft-info"><ShieldCheck size={15}/><p>기본 조언은 달잠 서버에서 기록과 생활습관을 분석해 생성합니다. 서버에서 OpenAI 방식을 활성화한 경우 기록 요약과 입력이 전송되며 API 사용료가 발생할 수 있어요.</p></div>
+            <div className="panel-heading"><div><h2>오늘의 나를 알려주세요</h2><p>생활습관 정보는 선택사항이에요. 입력하지 않아도 수면 기록을 바탕으로 조언을 받을 수 있어요.</p></div></div>
+            {!demo && record && <CoachingHabits key={accountId+":"+record.analysis_id} recordId={record.analysis_id} busy={busy}/>}
               {recordNote && <p className="coaching-data-guide">{recordNote}</p>}
               {requestFailure && <div className="error coaching-request-error" role="alert">
                 <strong>조언 요청에 문제가 있었어요</strong>
@@ -458,14 +501,14 @@ export default function SleepApp() {
                     : "결과를 확인하지 못했어요. 저장된 조언을 다시 불러와 확인한 뒤 필요하면 다시 요청해 주세요."}</p>
                 {requestFailure.status!==429 && requestFailure.status!==404 && <button type="button" className="text-button" disabled={busy||coachLoading} onClick={reloadCoachingHistory}>저장된 조언 다시 불러오기</button>}
               </div>}
-              <button type="submit" className="button primary full" disabled={busy||coachLoading||!record}>
-                {requestInFlight ? <Busy text="코칭을 작성하고 있어요"/> : <><Sparkles size={17}/>{requestFailure ? "조언 다시 요청하기" : "나에게 맞는 코칭 생성"}</>}
+              <button type="button" className="button primary full" disabled={busy||coachLoading||!record} onClick={()=>record&&void requestCoaching(record.analysis_id)}>
+                {requestInFlight ? <Busy text="코칭을 작성하고 있어요"/> : <><Sparkles size={17}/>{requestFailure ? "조언 다시 요청하기" : "무료 코칭 생성"}</>}
               </button>
-            </form>
           </section>
         </div>
       </> : loading ? <section className="panel coaching-history-state" role="status"><Busy text="수면 기록 불러오는 중"/></section>
         : <section className="panel"><Empty title="코칭의 첫걸음은 나의 기록부터"><p>수면 기록을 추가한 뒤 맞춤 코칭을 받아 보세요.</p><button className="button secondary" onClick={openUpload}><Plus size={16}/>수면 기록 추가</button></Empty></section>}
+      {premiumAvailable&&<PremiumEntry onOpen={()=>navigate("premium")}/>}
       <details className="panel coaching-style-settings"><summary>코칭 스타일 미리보기</summary><CoachingStylePreview key={(mbti??"default")+"-"+characterId} mbti={mbti} characterId={characterId}/></details>
     </>}
 
@@ -474,7 +517,7 @@ export default function SleepApp() {
     {page==="trash"&&<><div className="soft-info retention-note"><RotateCcw size={20}/><div><strong>마음이 바뀌어도 괜찮아요.</strong><p>삭제한 기록은 30일 동안 복원할 수 있습니다. 기간이 지난 항목은 앱 이용 시 정리됩니다. 영구 삭제한 기록은 복원할 수 없어요.</p></div></div><section className="panel"><div className="panel-heading"><h2>휴지통 <span className="count">{trash.sessions.length+trash.coaching.length}</span></h2>{trashLoading&&!demo&&<Busy/>}</div>{!trash.sessions.length&&!trash.coaching.length?<Empty title="휴지통이 비어 있어요"><p>삭제한 분석과 코칭은 이곳에서 관리할 수 있습니다.</p></Empty>:<div className="trash-list">{([...[...trash.sessions].map(t=>({id:t.id,kind:"session",title:`${shortDate(t.record.start)} 수면 분석`,expires_at:t.expires_at,blocked:false})),...[...trash.coaching].map(t=>({id:t.id,kind:"coaching",title:t.coaching.slice(0,65),expires_at:t.expires_at,blocked:!!t.parent_in_trash}))]).map(t=><div className="trash-row" key={t.kind+t.id}><span className="record-moon">{t.kind==="session"?<Moon size={19}/>:<Sparkles size={19}/>}</span><div><strong>{t.title}</strong><p>{shortDate(t.expires_at)}까지 복원 가능{t.blocked?" · 연결된 분석을 먼저 복원하세요":""}</p></div><button className="button secondary compact" disabled={busy||t.blocked} onClick={()=>perform(async()=>{await api(`watch/trash/${t.kind}/${t.id}/restore`,"POST");setRevision(n=>n+1);},"기록을 복원했어요.")}><RotateCcw size={14}/>복원</button><button className="icon-button danger" aria-label={`${t.title} 영구 삭제`} disabled={busy} onClick={()=>ask("이 기록을 영구 삭제할까요?","앱 DB와 관리 대상 백업에 삭제를 반영합니다. 이 작업은 되돌릴 수 없습니다.",async()=>{await api(`watch/trash/${t.kind}/${t.id}`,"DELETE");setRevision(n=>n+1);},true)}><Trash2 size={17}/></button></div>)}</div>}</section><section className="panel backup-panel"><div className="inline-title"><ShieldCheck size={21}/><h2>백업 보관 안내</h2></div><p>관리 대상 백업은 {backup?.retention_days||30}일 보관합니다. 기록·계정 영구 삭제는 해당 백업에도 반영됩니다.</p>{backup&&<Tag>관리 중인 백업 {backup.backup_count}개 · 정리 재시도 {backup.pending}개</Tag>}<p className="disclaimer">원본 파일, 다운로드한 파일, 외부 복사본은 앱의 삭제 관리 범위에 포함되지 않습니다.</p></section></>}
 
     {page==="accountSettings"&&<div className="account-grid"><section className="panel account-panel"><div className="account-profile"><span className="avatar large">{user.username.slice(0,1).toUpperCase()}</span><div><h2>{user.username} 님의 계정</h2><p>소중한 나의 밤을 위한 공간</p></div></div><h3>아이디 변경</h3><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await perform(async()=>{await api("auth/me","PATCH",Object.fromEntries(f));reset();setNotice("아이디를 변경했어요. 새 아이디로 다시 로그인해 주세요.");});}}><label>새 아이디<input name="new_username" required minLength={3} maxLength={40} autoComplete="username" placeholder="새 아이디" defaultValue={user.username}/></label><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><button className="button secondary" disabled={busy||demo}>아이디 변경</button></form><hr/><h3>비밀번호 변경</h3><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(f.get("new_password")!==f.get("confirmation")){setError("새 비밀번호 확인이 일치하지 않습니다.");return;}f.delete("confirmation");await perform(async()=>{await api("auth/me","PATCH",Object.fromEntries(f));reset();setNotice("비밀번호를 변경했어요. 다시 로그인해 주세요.");});}}><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><label>새 비밀번호<input name="new_password" type="password" autoComplete="new-password" required minLength={10} maxLength={128} placeholder="10자 이상 입력해 주세요"/></label><label>새 비밀번호 확인<input name="confirmation" type="password" autoComplete="new-password" required minLength={10} maxLength={128}/></label><button className="button secondary" disabled={busy||demo}>비밀번호 변경</button></form><p className="disclaimer">변경하면 모든 로그인 세션이 종료됩니다. 기존 기록과 코칭은 유지됩니다.</p></section><section className="panel account-panel account-danger"><span className="danger-icon"><Trash2 size={22}/></span><h2>계정 삭제</h2><p>계정과 연결된 분석, 코칭, 휴지통, 원시 기록을 영구 삭제합니다. 관리 대상 백업에도 삭제를 반영합니다.</p><div className="soft-warning">삭제한 계정과 기록은 복원할 수 없습니다. 같은 아이디로 다시 가입해도 이전 기록은 돌아오지 않습니다.</div><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);await perform(async()=>{const result=await api<{backups?:{pending:number}}>("auth/me","DELETE",{current_password:f.get("current_password"),confirmation:f.get("confirmation")});reset();setNotice(result.backups?.pending?"계정은 삭제됐지만 일부 백업 정리가 남아 있습니다. 관리자에게 알려주세요.":"계정과 연결된 기록을 삭제했습니다.");});}}><label>현재 비밀번호<input name="current_password" type="password" autoComplete="current-password" required maxLength={128}/></label><label>확인을 위해 ‘계정 삭제’를 입력해 주세요<input name="confirmation" pattern="계정 삭제" required placeholder="계정 삭제" autoComplete="off"/></label><label className="checkbox-label"><input type="checkbox" required/>계정과 기록을 영구 삭제하며 복원할 수 없음을 이해했습니다.</label><button className="button danger-button" disabled={busy||demo}>계정 영구 삭제</button></form></section></div>}
-    <footer className="footer"><span><Moon size={14}/>달잠 · 조금 더 나은 밤을 위해</span><span>웨어러블 추정 기록 기반 · 의료 진단 서비스가 아닙니다</span></footer>
+    <footer className="footer"><span><Moon size={14}/>달잠 · 조금 더 나은 밤을 위해</span><span>수면 기록 기반 · 의료 진단 서비스가 아닙니다</span></footer>
     </main>
 
     {upload&&<div className="modal-overlay" onClick={()=>{if(!busy)setUploadView(null);}}>
@@ -507,7 +550,7 @@ export default function SleepApp() {
             <button className="button primary full" disabled={!file||busy} onClick={importFile}>
               {busy?<Busy text="수면 기록을 분석하고 있어요"/>:<><Sparkles size={17}/>분석하고 내 기록에 저장</>}
             </button>
-            <p className="disclaimer">분석·저장은 AI 코칭을 자동으로 요청하지 않습니다.</p>
+            <p className="disclaimer">저장한 기록의 상세에서 무료 코칭을 요청할 수 있어요.</p>
           </>}
       </section>
     </div>}

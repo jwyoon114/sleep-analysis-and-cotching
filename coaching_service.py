@@ -1,7 +1,8 @@
-"""Coaching for account-owned wearable sleep records."""
+"""Coaching for account-owned wearable and self-reported sleep records."""
 from app_database import begin_write
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 import json
 import os
 import re
@@ -12,9 +13,13 @@ from uuid import uuid4
 
 from account_personalization import get_personalization
 from coaching_expression import DEFAULT_EXPRESSION, expression_snapshot, render_personalized_answer
-from coaching_free import generate_free_coaching
+from coaching_free import generate_free_coaching, session_advice
+from coaching_session import VERSION as FREE_VERSION, analyze_session, render_session
+import coaching_lifestyle
 from coaching_patterns import _record_day, _timestamp
-from health_records import connect, get_owned_session, list_sessions, overview
+from health_records import is_manual_sleep, connect, get_owned_session, list_sessions, overview
+import manual_coaching
+from premium_service import has_paid_ai_entitlement
 from service_limits import reserve_coaching_request, setting
 
 def api_limit_detail(error):
@@ -217,6 +222,70 @@ def _window_boundary(records, field, select):
     return select(values)[1] if values else ""
 
 
+def request_response(key, model, input_text, *, project=None, max_output_tokens=1400, timeout=45):
+    from openai import OpenAI
+
+    client_options = {"api_key": key, "timeout": timeout, "max_retries": 0}
+    if project:
+        client_options["project"] = project
+        client_options["base_url"] = "https://api.openai.com/v1"
+    with OpenAI(**client_options) as client:
+        return client.responses.create(
+            model=model, instructions=manual_coaching.INSTRUCTIONS, input=input_text,
+            text={"format": manual_coaching.OUTPUT_FORMAT}, max_output_tokens=max_output_tokens, store=False,
+        )
+
+
+def _manual_openai(data, *, requester=None):
+    from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, RateLimitError
+
+    model = None
+    if requester is None:
+        try:
+            key, model = settings()
+        except ValueError:
+            return None, {"fallback_reason": "configuration"}
+        def requester(input_text):
+            return request_response(key, model, input_text)
+    input_text = json.dumps(data, ensure_ascii=False)
+    input_limit = setting("COACHING_MAX_INPUT_BYTES", 64000)
+    if input_limit and len(input_text.encode("utf-8")) > input_limit:
+        return None, {"fallback_reason": "input_limit"}
+    try:
+        response = requester(input_text)
+        if (getattr(response, "status", None) != "completed"
+                or not isinstance(getattr(response, "output_text", None), str)):
+            raise manual_coaching.InvalidManualAdvice()
+        suggestions, questions = manual_coaching.parse_advice(response.output_text, data)
+    except APITimeoutError:
+        return None, {"fallback_reason": "timeout"}
+    except RateLimitError:
+        return None, {"fallback_reason": "rate_limit"}
+    except APIConnectionError:
+        return None, {"fallback_reason": "connection"}
+    except APIStatusError as error:
+        reason = "authentication" if error.status_code in (401, 403) else "provider_error"
+        return None, {"fallback_reason": reason}
+    except (manual_coaching.InvalidManualAdvice, APIResponseValidationError):
+        return None, {"fallback_reason": "invalid_response"}
+    return manual_coaching.render_answer(data, suggestions, questions), {
+        "engine": "manual-openai", "requested_model": model,
+        "model": getattr(response, "model", None) or model,
+    }
+
+
+def _manual_advice(record, history, lifestyle, expression, engine):
+    recent = manual_coaching.recent_history(record, history)
+    data = manual_coaching.payload(record, recent, lifestyle, expression)
+    answer, provider = _manual_openai(data) if engine == "openai" else (None, {})
+    context = {"engine": "manual-rules", "model": "규칙 기반",
+               "prompt_version": manual_coaching.PROMPT_VERSION, "expression": expression,
+               "input_summary": data, **provider}
+    if answer is None:
+        answer = manual_coaching.render_answer(data, manual_coaching.rule_suggestions(data))
+    return answer, context, recent
+
+
 def generate(account_id, session_id, lifestyle, db_path=None):
     session = get_owned_session(session_id, account_id, db_path)
     if session is None:
@@ -224,12 +293,20 @@ def generate(account_id, session_id, lifestyle, db_path=None):
     engine = os.getenv("COACHING_ENGINE", "rules").strip().lower()
     if engine not in ("rules", "openai"):
         raise ValueError("서버의 코칭 엔진 설정을 확인하세요.")
+    if not has_paid_ai_entitlement(account_id):
+        engine = "rules"
     history = list_sessions(account_id, db_path)
-    if engine == "openai":
+    if is_manual_sleep(session):
+        expression = expression_snapshot(get_personalization(account_id, db_path))
+        reserve_coaching_request(account_id, db_path)
+        lifestyle = manual_coaching.clean_lifestyle(lifestyle)
+        answer, context, recent = _manual_advice(session, history, lifestyle, expression, engine)
+    elif engine == "openai":
+        history = [row for row in history if not is_manual_sleep(row)]
         recent = history[:14]
         answer, context = _generate_openai(account_id, session, recent, lifestyle, db_path)
     else:
-        recent = _rule_history(session, history)
+        recent = _rule_history(session, [row for row in history if not is_manual_sleep(row)])
         expression = expression_snapshot(get_personalization(account_id, db_path))
         reserve_coaching_request(account_id, db_path)
         result = generate_free_coaching(session, recent, lifestyle, include_presentation=True)
@@ -239,6 +316,51 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         context = _rule_context(result, session, recent, lifestyle)
         context["expression"] = expression
 
+    return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
+
+
+def generate_free(account_id, session, db_path=None):
+    history = list_sessions(account_id, db_path)
+    recent = manual_coaching.recent_history(session, history)
+    preferences = coaching_lifestyle.preferences(account_id, db_path=db_path)
+    daily = coaching_lifestyle.daily_habits(account_id, session, db_path=db_path)
+    lifestyle = {key: value for key, value in (preferences | daily["habits"]).items() if value is not None}
+    expression = expression_snapshot(get_personalization(account_id, db_path))
+    analysis = analyze_session(session, recent, lifestyle)
+    answer = render_session(analysis, lifestyle, expression)
+    data = {"selected_record": _free_record(session), "recent_records": [_free_record(row) for row in recent],
+            "lifestyle": lifestyle, "expression": expression}
+    fingerprint = sha256(json.dumps([FREE_VERSION, data],
+                                   sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    context = {"engine": "manual-rules" if is_manual_sleep(session) else "rules", "model": "규칙 기반",
+               "prompt_version": FREE_VERSION, "expression": expression, "input_summary": data,
+               "free_analysis": analysis,
+               "free_fingerprint": fingerprint}
+    return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
+
+
+def _free_record(record):
+    # list_sessions adds display counters; they are not a revision of the record.
+    stored = {key: value for key, value in record.items() if key != "coaching_count"}
+    return manual_coaching.summary(record) | {key: record.get(key) for key in (
+        "analysis_id", "asleep_minutes", "unrecorded_minutes", "recorded_minutes",
+    )} | {"record_version": sha256(json.dumps(stored, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}
+
+
+def public_coaching(item):
+    if item is None:
+        return None
+    context = item.get("context") or {}
+    source = {key: context[key] for key in ("engine", "fallback_reason") if key in context}
+    if isinstance(context.get("premium_demo_live"), dict):
+        source["premium_demo_live"] = {"kind": context["premium_demo_live"].get("kind")}
+    if isinstance(context.get("alarm_schedule"), dict):
+        source["alarm_schedule"] = {key: context["alarm_schedule"].get(key)
+                                    for key in ("bedtime", "wake_time", "timezone", "reason")}
+    return {key: item[key] for key in ("id", "coaching", "created_at")} | {"context": source}
+
+
+def save_generated(account_id, session, recent, lifestyle, answer, context, db_path=None, *, coaching_id=None):
     referenced = {s["analysis_id"]: s for s in [session] + recent}
     context.update(
         record_ids=list(referenced),
@@ -248,14 +370,40 @@ def generate(account_id, session_id, lifestyle, db_path=None):
         window_end=_window_boundary(referenced.values(), "end", max),
     )
     created = datetime.now(timezone.utc).isoformat()
-    coaching_id = str(uuid4())
+    coaching_id = coaching_id or str(uuid4())
+    session_id = session["analysis_id"]
     with closing(connect(db_path)) as db, db:
         # Recheck record ownership and availability before saving the answer.
         begin_write(db)
+        fingerprint = context.get("free_fingerprint")
+        if fingerprint:
+            lock = " FOR UPDATE" if getattr(db, "is_postgres", False) else ""
+            db.execute("SELECT id FROM accounts WHERE id=?" + lock, (account_id,)).fetchone()
         placeholders = ",".join("?" for _ in referenced)
         active = db.execute(f"SELECT count(*) FROM sessions WHERE subject=? AND id IN ({placeholders}) AND NOT EXISTS(SELECT 1 FROM trash_sessions WHERE session_id=sessions.id)", (account_id, *referenced)).fetchone()[0]
         if active != len(referenced):
             raise ValueError("참고한 분석 기록이 삭제되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
+        if fingerprint or is_manual_sleep(session) or "premium_demo_live" in context:
+            rows = db.execute(f"SELECT id, payload FROM sessions WHERE subject=? AND id IN ({placeholders})"
+                              + (lock if fingerprint else ""),
+                              (account_id, *referenced))
+            for row in rows:
+                current = json.loads(row["payload"])
+                summarize = _free_record if fingerprint else manual_coaching.summary
+                if summarize(current) != summarize(referenced[row["id"]]):
+                    raise ValueError("참고한 수면 기록이 변경되어 코칭을 저장하지 못했습니다. 현재 기록으로 다시 시도하세요.")
+                if ("premium_demo_live" in context and row["id"] == session_id
+                        and current.get("asleep_minutes") != session.get("asleep_minutes")):
+                    raise ValueError("참고한 수면 수치가 변경되어 코칭을 저장하지 못했습니다.")
+        if fingerprint:
+            rows = db.execute("""SELECT c.id, c.text AS coaching, c.created_at, ctx.payload AS context
+                FROM coaching c JOIN coaching_context ctx ON ctx.coaching_id=c.id
+                WHERE c.account_id=? AND c.session_id=? AND
+                NOT EXISTS(SELECT 1 FROM trash_coaching WHERE coaching_id=c.id)""", (account_id, session_id))
+            for row in rows:
+                if json.loads(row["context"]).get("free_fingerprint") == fingerprint:
+                    return dict(row) | {"analysis_id": session_id, "context": json.loads(row["context"]), "reused": True}
+            reserve_coaching_request(account_id, db_path, connection=db)
         db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)", (coaching_id, account_id, session_id, answer, json.dumps(lifestyle, ensure_ascii=False), created))
         db.execute("INSERT INTO coaching_context VALUES(?,?)", (coaching_id, json.dumps(context, ensure_ascii=False)))
     return {"id": coaching_id, "analysis_id": session_id, "coaching": answer, "created_at": created, "context": context}

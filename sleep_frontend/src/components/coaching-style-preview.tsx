@@ -6,6 +6,7 @@ import {
   CHARACTERS, COACHING_PRESETS, MBTI_TYPES, createCoachingPreview, getCharacter,
   type CharacterId, type MbtiType,
 } from "@/lib/coaching-preview";
+import {coachingSections} from "@/lib/coaching-sections";
 import styles from "./coaching-style-preview.module.css";
 
 type CoachingStyle = {
@@ -27,7 +28,11 @@ export function CoachingAdvice({body, characterId}: Pick<CoachingStyle, "charact
   return (
     <article aria-label="수면 조언">
       <CoachingCharacter characterId={characterId} />
-      <p className="coach-text">{body}</p>
+      {coachingSections(body).map(({title, text}, index) =>
+        <section key={index} className="coach-text coaching-section">
+          {title && <h3>{title}</h3>}
+          <p>{text}</p>
+        </section>) }
     </article>
   );
 }
