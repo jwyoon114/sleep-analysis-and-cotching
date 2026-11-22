@@ -119,7 +119,7 @@ class ScheduledPushPostgresTests(unittest.TestCase):
             db.execute("INSERT INTO web_push_subscriptions "
                        "(endpoint_id,token_hash,endpoint,p256dh,auth_secret,registered_at) VALUES (%s,%s,%s,%s,%s,%s)",
                        (endpoint_id, digest(token), payload["endpoint"], payload["keys"]["p256dh"], payload["keys"]["auth"], now))
-        self.assertEqual(postgres_migrate.apply_migrations(), (6, 7))
+        self.assertEqual(postgres_migrate.apply_migrations(), (6, 7, 8))
         self.assertEqual(postgres_migrate.apply_migrations(), ())
         headers = {"Authorization": "Bearer " + token, "X-Daljam-Push-Device": secrets.token_hex(32)}
         before, = self.devices(headers)

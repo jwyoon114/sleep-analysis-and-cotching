@@ -4,7 +4,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, StrictBool, model_validator
+from pydantic import BaseModel, StrictBool
 
 from app_database import uses_postgres
 from health_records import connect
@@ -22,13 +22,6 @@ class Preferences(BaseModel):
     allow_profanity: StrictBool = False
     character: Literal["cat", "raccoon", "dog", "rabbit"]
 
-    @model_validator(mode="after")
-    def check_profanity_consent(self):
-        if self.allow_profanity and self.intensity != "direct":
-            raise ValueError("비속어 허용은 강한 직설에서만 설정할 수 있어요.")
-        return self
-
-
 _SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS account_personalization (
     account_id TEXT PRIMARY KEY NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -37,8 +30,7 @@ CREATE TABLE IF NOT EXISTS account_personalization (
     intensity TEXT NOT NULL CHECK (intensity IN ('gentle','firm','direct')),
     allow_profanity BOOLEAN NOT NULL CHECK (allow_profanity IN (FALSE, TRUE)),
     character TEXT NOT NULL CHECK (character IN ('cat','raccoon','dog','rabbit')),
-    completed_at TEXT NOT NULL,
-    CHECK (NOT allow_profanity OR intensity = 'direct')
+    completed_at TEXT NOT NULL
 );
 """
 _COLUMNS = "mbti, speech, intensity, allow_profanity, character, completed_at"
@@ -48,6 +40,21 @@ def _prepare_local(db, db_path):
     # The desktop SQLite backend upgrades on demand. PostgreSQL only uses its migration.
     if not uses_postgres(db_path):
         db.execute(_SQLITE_SCHEMA)
+        # Upgrade only the old coupling constraint, inside one write transaction.
+        # All columns/values and the account FK survive; never modify old advice.
+        def coupled():
+            row = db.execute("SELECT sql FROM sqlite_master WHERE name='account_personalization'").fetchone()
+            return row and "NOT allow_profanity OR intensity" in row[0]
+        if coupled():
+            if not db.in_transaction:
+                db.execute("BEGIN IMMEDIATE")
+            if coupled():
+                temporary = "account_personalization_consent_upgrade"
+                db.execute(_SQLITE_SCHEMA.replace("account_personalization", temporary))
+                columns = "account_id, " + _COLUMNS
+                db.execute(f"INSERT INTO {temporary} ({columns}) SELECT {columns} FROM account_personalization")
+                db.execute("DROP TABLE account_personalization")
+                db.execute(f"ALTER TABLE {temporary} RENAME TO account_personalization")
 
 
 def _get(db, account_id):

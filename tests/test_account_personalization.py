@@ -82,7 +82,7 @@ class PersonalizationTests(unittest.TestCase):
                     self.assertEqual(self.client.patch(ENDPOINT, headers=auth, json=values).json()["personalization"],
                                      {**values, "completed_at": original["completed_at"]})
         for invalid in ({"mbti": "Abcd"}, {"speech": "unknown"}, {"character": "owl"}, {"intensity": "other"},
-                        {"allow_profanity": True}, {"intensity": "direct", "allow_profanity": "true"},
+                        {"allow_profanity": 1}, {"intensity": "direct", "allow_profanity": "true"},
                         {"completed_at": "2026-11-01"}):
             self.assertEqual(self.client.patch(ENDPOINT, headers=auth, json={**CHOICES, **invalid}).status_code, 422)
         self.client.patch(ENDPOINT, headers=auth, json=CHOICES).raise_for_status()

@@ -38,6 +38,11 @@
       "version": 7,
       "file": "0007_coaching_habits.sql",
       "sha256": "c0006c548f968810de8fa1a29c5221109da61f871754cce5e3106ac7cdac1925"
+    },
+    {
+      "version": 8,
+      "file": "0008_independent_coaching_consent.sql",
+      "sha256": "ef1ee27e17f5c52ec0f7d7c6ff26598b652d665039e49c1942db70f5c0a30221"
     }
   ]
 }

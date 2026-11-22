@@ -42,7 +42,9 @@ class ManualCoachingTests(ManualSleepFixture, unittest.TestCase):
         return json.loads(self.create.call_args.kwargs["input"])
 
     def test_single_record_calls_existing_provider_and_saves_source(self):
-        result = self.coach().raise_for_status().json()
+        response = self.coach()
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
         self.assertEqual(result["context"]["engine"], "manual-openai")
         self.assertEqual(result["context"]["record_count"], 1)
         self.assertIn("추정 수면 시간은 8시간", result["coaching"])

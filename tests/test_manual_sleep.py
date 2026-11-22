@@ -33,7 +33,7 @@ class ManualSleepFixture:
             flags |= {"SLEEP_DB_BACKEND": "sqlite"}
         self.enterContext(patch.dict(os.environ, flags))
         if self.cluster:
-            self.assertEqual(postgres_migrate.apply_migrations(), (1, 2, 3, 4, 5, 6, 7))
+            self.assertEqual(postgres_migrate.apply_migrations(), (1, 2, 3, 4, 5, 6, 7, 8))
             self.assertEqual(postgres_migrate.apply_migrations(), ())
         self.client = self.enterContext(TestClient(app))
         self.owner = self.register("manual-owner")

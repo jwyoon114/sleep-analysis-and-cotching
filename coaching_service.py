@@ -14,6 +14,7 @@ from uuid import uuid4
 from account_personalization import get_personalization
 from coaching_expression import DEFAULT_EXPRESSION, expression_snapshot, render_personalized_answer
 from coaching_free import generate_free_coaching, session_advice
+from coaching_session import VERSION as FREE_VERSION, analyze_session, render_session
 import coaching_lifestyle
 from coaching_patterns import _record_day, _timestamp
 from health_records import is_manual_sleep, connect, get_owned_session, list_sessions, overview
@@ -325,21 +326,25 @@ def generate_free(account_id, session, db_path=None):
     daily = coaching_lifestyle.daily_habits(account_id, session, db_path=db_path)
     lifestyle = {key: value for key, value in (preferences | daily["habits"]).items() if value is not None}
     expression = expression_snapshot(get_personalization(account_id, db_path))
-    answer = session_advice(session, recent, lifestyle, expression)
+    analysis = analyze_session(session, recent, lifestyle)
+    answer = render_session(analysis, lifestyle, expression)
     data = {"selected_record": _free_record(session), "recent_records": [_free_record(row) for row in recent],
             "lifestyle": lifestyle, "expression": expression}
-    fingerprint = sha256(json.dumps([data["selected_record"], answer],
+    fingerprint = sha256(json.dumps([FREE_VERSION, data],
                                    sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     context = {"engine": "manual-rules" if is_manual_sleep(session) else "rules", "model": "규칙 기반",
-               "prompt_version": "session-rules-v1", "expression": expression, "input_summary": data,
+               "prompt_version": FREE_VERSION, "expression": expression, "input_summary": data,
+               "free_analysis": analysis,
                "free_fingerprint": fingerprint}
     return save_generated(account_id, session, recent, lifestyle, answer, context, db_path)
 
 
 def _free_record(record):
+    # list_sessions adds display counters; they are not a revision of the record.
+    stored = {key: value for key, value in record.items() if key != "coaching_count"}
     return manual_coaching.summary(record) | {key: record.get(key) for key in (
         "analysis_id", "asleep_minutes", "unrecorded_minutes", "recorded_minutes",
-    )}
+    )} | {"record_version": sha256(json.dumps(stored, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}
 
 
 def public_coaching(item):
@@ -397,7 +402,7 @@ def save_generated(account_id, session, recent, lifestyle, answer, context, db_p
                 NOT EXISTS(SELECT 1 FROM trash_coaching WHERE coaching_id=c.id)""", (account_id, session_id))
             for row in rows:
                 if json.loads(row["context"]).get("free_fingerprint") == fingerprint:
-                    return dict(row) | {"analysis_id": session_id, "context": context, "reused": True}
+                    return dict(row) | {"analysis_id": session_id, "context": json.loads(row["context"]), "reused": True}
             reserve_coaching_request(account_id, db_path, connection=db)
         db.execute("INSERT INTO coaching VALUES(?,?,?,?,?,?)", (coaching_id, account_id, session_id, answer, json.dumps(lifestyle, ensure_ascii=False), created))
         db.execute("INSERT INTO coaching_context VALUES(?,?)", (coaching_id, json.dumps(context, ensure_ascii=False)))

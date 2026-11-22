@@ -28,6 +28,7 @@ export const CHARACTER_THEMES: Record<CharacterId, {moon:"crescent" | "full"}> =
   rabbit:{moon:"full"},
 };
 
-export function changeIntensity(intensity: Preferences["intensity"]): Pick<Preferences,"intensity" | "allow_profanity"> {
-  return {intensity, allow_profanity:false};
+export function changeIntensity(intensity: Preferences["intensity"]): Pick<Preferences,"intensity"> {
+  // Explicit profanity consent is an independent preference; never reset it silently.
+  return {intensity};
 }
