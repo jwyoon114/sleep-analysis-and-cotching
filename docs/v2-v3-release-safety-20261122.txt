@@ -1,0 +1,63 @@
+Daljam V2 + V3 integrated release safety notes
+
+Sources
+- Production: a7ce42edec072d165e53f71b23020c8a14cd3c8f
+- V2: 92640a2d1232a7305885f7a12c1971bdc0b0bdb2
+- V3: 18203c4401103d8c9fea7eab2b84c47d504dc44a (direct child of V2)
+- Merge base: 7064b47aa62cb1e6b9cc559fe5a07070b75014b1
+
+Integration
+V3 is merged once into a branch based on production. The automatic three-way
+merge preserves the production supervisor, push worker loop, shutdown handling,
+service worker, A UI, APK and Docker push defaults. No conflict markers occurred.
+The merged Dockerfile includes the V3 runtime modules and keeps scheduled push
+and immediate push tests disabled by default. It also explicitly disables the
+Premium demo and Premium AI flags. Production server checks continue to reject
+demo checkout, activation, preview and live coaching regardless of those flags.
+Premium entry points now require the server's demo_available=true response and
+are hidden while loading, on errors and for unavailable/production accounts.
+The existing staging demo implementation is retained for later presentation work.
+
+Database diagnostics
+The adapter still returns its existing safe 503 contract and never retries writes.
+It logs only a fixed operation stage and a fixed SQLSTATE category. SQL text,
+parameters, credentials, URLs, accounts, request paths and exception details are
+excluded. Connection establishment, catalog loading, schema history verification,
+begin/execute/executemany/finish failures can now be distinguished internally.
+This does not establish the historical root cause of the reported intermittent 503.
+Each operation opens its own connection; prepared plans are disabled. Existing
+advisory transaction serialization, 10s lock timeout and 60s query timeout remain.
+
+Recovery source
+- Branch: codex/v2-v3-rollback-compatible-20261122
+- Commit: 165e2e3746c03fe573ca0886435120dfefd79df7
+This is production a7ce42e plus only the 0007/0008 migration catalog. It accepts
+schema 0008 while keeping the previous A UI/PWA implementation. Recovery tests
+archive this immutable commit for both API compatibility and Docker rehearsals.
+Never deploy an unmodified schema-0006 image against schema 0008. Code rollback
+does not restore data. Restore data to an isolated database and verify it before
+any connection switch; do not overwrite the live database.
+
+Validation added or extended
+- Node behavior tests include every *.test.mjs, including V2/V3 additions.
+- Local and Linux Python suites include the immutable recovery source.
+- Exact 0006 -> 0007 -> 0008 sequence; every existing application table's row
+  count and content fingerprint; seeded account, coaching, profile and PWA data.
+- Dump/restore of schema 0006, the same upgrades, backup hash immutability,
+  existing-account login/history through the recovery runtime.
+- Real isolated PostgreSQL lock/query timeouts and missing-table failures.
+- Fixed diagnostic categories and redaction; no automatic write retries.
+- Production browser test hides Premium and checks direct demo APIs are denied,
+  then exercises free manual coaching, JSON upload and mobile widths.
+
+Deployment gate
+Passing synthetic/local/CI tests does not prove a current production backup or
+real-phone behavior. Before merging the production PR, verify the actual running
+SHA, connected DB and schema history through an authenticated internal path;
+obtain a fresh production backup and successfully restore/upgrade it in isolation;
+retain the tested recovery image; have the Render administrator confirm the
+existing-service budget. Keep scheduled push OFF. No new infrastructure or
+OpenAI calls are required for this release. Do not trigger intermediate deploys.
+
+The release status and measured pass/fail/skip counts belong in the PR and final
+execution report, not in this source note. This file is not deployment evidence.

@@ -1,5 +1,5 @@
 import {ChevronLeft, ChevronRight, Clock3, Moon, Plus, TrendingUp} from "lucide-react";
-import {clock, dayBefore, minutes, shortDate, today, type SleepRecord} from "@/lib/sleep";
+import {clock, dayBefore, minutes, recordDuration, shortDate, today, type SleepRecord} from "@/lib/sleep";
 import {useState} from "react";
 
 export default function MobileRecordList({records, loading, onOpen, onUpload, onCompare}: {
@@ -14,7 +14,8 @@ export default function MobileRecordList({records, loading, onOpen, onUpload, on
   const [query,setQuery]=useState("");
   const start=range==="all" ? null : dayBefore(end,range-1);
   const visible=start ? records.filter(record=>record.start.slice(0,10)>=start && record.start.slice(0,10)<=end) : records;
-  const observed=visible.filter(record=>Number.isFinite(record.asleep_minutes) && record.asleep_minutes>=0);
+  const observed=visible.filter(record=>record.data_type!=="manual")
+    .filter(record=>Number.isFinite(record.asleep_minutes) && record.asleep_minutes>=0);
   const average=observed.length ? observed.reduce((sum,record)=>sum+record.asleep_minutes,0)/observed.length : null;
   const results=visible.filter(record=>record.start.slice(0,10).includes(query.trim()));
 
@@ -28,7 +29,7 @@ export default function MobileRecordList({records, loading, onOpen, onUpload, on
       <button type="button" className="icon-button" aria-label="다음 기간" disabled={end>=today()} onClick={()=>setEnd(dayBefore(end,-range))}><ChevronRight size={19}/></button>
     </div>}
     {visible.length>0 && <div className="record-summary">
-      <div className="panel"><Moon size={20} aria-hidden="true"/><span>기록당 평균 수면</span><strong>{minutes(average)}</strong></div>
+      <div className="panel"><Moon size={20} aria-hidden="true"/><span>기기 기록 평균 수면</span><strong>{minutes(average)}</strong></div>
       <div className="panel"><Clock3 size={20} aria-hidden="true"/><span>수면 기록</span><strong>{visible.length}건</strong></div>
     </div>}
     <div className="record-list-heading"><h2>{range==="all"?"최근 기록":"기간 내 기록"}</h2><button type="button" className="dashboard-link" onClick={onCompare}><TrendingUp size={17}/>기간 비교</button></div>
@@ -36,7 +37,7 @@ export default function MobileRecordList({records, loading, onOpen, onUpload, on
     {loading && !records.length ? <p role="status" className="panel">수면 기록을 불러오고 있어요.</p> : results.length ? <ul className="record-list-items">
       {results.map(record=><li key={record.analysis_id}><button type="button" className="record-row" onClick={()=>onOpen(record.analysis_id)}>
         <span><strong>{shortDate(record.start)}</strong><Moon size={17} aria-hidden="true"/></span>
-        <span><strong>{minutes(Number.isFinite(record.asleep_minutes) && record.asleep_minutes>=0 ? record.asleep_minutes : null)}</strong><small>{clock(record.start)} – {clock(record.end)}</small></span>
+        <span><strong>{recordDuration(record)}</strong><small>{record.data_type==="manual"&&"직접 입력 · "}{clock(record.start)} – {clock(record.end)}</small></span>
         <ChevronRight size={19} aria-hidden="true"/>
       </button></li>)}
     </ul> : <div className="panel"><p>{visible.length?"검색에 맞는 날짜가 없어요.":records.length?"이 기간에는 수면 기록이 없어요.":"아직 수면 기록이 없어요."}</p>{!records.length&&<button type="button" className="dashboard-link" onClick={onUpload}><Plus size={17}/>수면 데이터 가져오기</button>}</div>}

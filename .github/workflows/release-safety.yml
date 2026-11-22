@@ -2,7 +2,7 @@ name: Release safety rehearsal
 
 on:
   push:
-    branches: [feature/release-candidate, feature/final-release-integration, codex/ui-release-validation, codex/home-feedback-review, feature/pwa-ui-production-release]
+    branches: [feature/release-candidate, feature/final-release-integration, codex/ui-release-validation, codex/home-feedback-review, feature/pwa-ui-production-release, codex/v2-v3-production-integration-20261122]
 
 permissions:
   contents: read
@@ -52,7 +52,7 @@ jobs:
       - name: Frontend behavior checks with Node 24
         shell: bash
         run: |
-          docker run --rm -v "$PWD:/repo:ro" -w /repo/sleep_frontend node:24-bookworm-slim node --experimental-strip-types --test tests/coaching-preview.test.mjs tests/coaching-body.test.mjs tests/demo-runtime.test.mjs tests/personalization.test.mjs tests/timeline.test.mjs tests/sleep-stage-breakdown.test.mjs tests/home-summary.test.mjs tests/install-platform.test.mjs tests/pwa-push.test.mjs
+          docker run --rm -v "$PWD:/repo:ro" -w /repo/sleep_frontend node:24-bookworm-slim node --experimental-strip-types --test 'tests/*.test.mjs'
       - name: Retain tested candidate and compatible rollback images
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -92,17 +92,16 @@ function IntensityField({draft,onChange}:{draft:Draft;onChange:(change:Partial<D
   return <>
     <Choices label="코칭 강도" options={intensityChoices} value={draft.intensity} onChange={value=>{
       onChange(changeIntensity(value));
-      if(value==="direct")ask();
     }}/>
-    {draft.intensity==="direct"&&<p className="preference-consent">
+    <p className="preference-consent">
       <span>비속어 사용 {draft.allow_profanity?"허용":"미허용"}</span>
       <button type="button" className="button secondary" onClick={ask}>변경</button>
-    </p>}
+    </p>
     <dialog ref={dialog} className="preference-dialog" aria-labelledby={id+"-title"} aria-describedby={id+"-description"}
       onClose={()=>{if(!dialog.current?.open)opener.current?.focus();}}>
       <span className="consent-icon"><Zap size={22} aria-hidden="true"/></span>
       <h2 id={id+"-title"}>비속어 사용을 허용할까요?</h2>
-      <p id={id+"-description"}>기본값은 미허용이에요. 어떤 강도에서도 인신공격이나 차별적 표현은 허용하지 않아요.</p>
+      <p id={id+"-description"}>기본값은 미허용이에요. 허용하면 기록에 따른 강조에 제한적인 거친 표현이 쓰일 수 있어요. 강도와 별도로 저장되며 항상 사용하지는 않아요. 인신공격이나 차별적 표현은 사용하지 않아요.</p>
       <div className="preference-actions">
         <button ref={deny} type="button" className="button primary" onClick={()=>chooseConsent(false)}>허용 안 함</button>
         <button type="button" className="button secondary" onClick={()=>chooseConsent(true)}>허용</button>

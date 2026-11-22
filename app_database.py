@@ -5,6 +5,7 @@ serialized initially to preserve the single-writer service assumptions. This
 is deliberately conservative; finer locks require real multi-backend tests.
 """
 from collections.abc import Mapping
+import logging
 import os
 
 from postgres_db import connect_postgres
@@ -16,6 +17,17 @@ class DatabaseUnavailable(RuntimeError):
 
 class BackupPolicyPending(DatabaseUnavailable):
     pass
+
+
+def _log_database_failure(stage, error):
+    """Only fixed categories: never SQL, parameters, DSNs or exception text."""
+    state = getattr(error, "sqlstate", None)
+    category = {"55P03": "lock_timeout", "57014": "statement_timeout"}.get(state)
+    if category is None:
+        category = {"08": "connection", "28": "authentication", "40": "transaction_conflict",
+                    "53": "resource_limit", "42": "query_or_schema", "23": "constraint"}.get(
+                        state[:2] if isinstance(state, str) else None, "unclassified")
+    logging.getLogger(__name__).error("Database failure: stage=%s category=%s", stage, category)
 
 
 def uses_postgres(db_path=None):
@@ -135,7 +147,8 @@ class PostgresConnection:
             # All service connections participate, including reads before writes.
             # READ COMMITTED takes a fresh snapshot after obtaining this lock.
             self.raw.execute("SELECT pg_advisory_xact_lock(731412811)")
-        except Exception:
+        except Exception as error:
+            _log_database_failure("begin", error)
             self.close()
             raise DatabaseUnavailable("DB 트랜잭션을 시작하지 못했습니다. 잠시 후 다시 시도하세요.") from None
 
@@ -143,7 +156,8 @@ class PostgresConnection:
         self._begin()
         try:
             return Cursor(self.raw.execute(bind_sql(sql), () if parameters is None else parameters))
-        except Exception:
+        except Exception as error:
+            _log_database_failure("execute", error)
             raise DatabaseUnavailable("DB 요청을 완료하지 못했습니다. 저장 상태를 확인한 뒤 다시 시도하세요.") from None
 
     def executemany(self, sql, parameters):
@@ -152,7 +166,8 @@ class PostgresConnection:
             cursor = self.raw.cursor()
             cursor.executemany(bind_sql(sql), parameters)
             return Cursor(cursor)
-        except Exception:
+        except Exception as error:
+            _log_database_failure("executemany", error)
             raise DatabaseUnavailable("DB 요청을 완료하지 못했습니다. 저장 상태를 확인한 뒤 다시 시도하세요.") from None
 
     def __enter__(self):
@@ -165,7 +180,8 @@ class PostgresConnection:
         transaction, self._transaction = self._transaction, None
         try:
             return transaction.__exit__(kind, value, traceback)
-        except Exception:
+        except Exception as error:
+            _log_database_failure("finish", error)
             # A lost commit response does not prove that the server rolled back.
             raise DatabaseUnavailable("DB 처리를 확인하지 못했습니다. 저장 상태를 먼저 확인하세요.") from None
 
@@ -178,19 +194,23 @@ class PostgresConnection:
 def connect_application_postgres():
     from postgres_migrate import inspect_history, load_migrations
     raw = None
+    stage = "catalog"
     try:
         migrations = load_migrations()
+        stage = "connect"
         raw = connect_postgres()
         # Session-bound prepared plans must not leak across pooled sessions.
         # executemany also respects this setting; retain its batching support.
         raw.prepare_threshold = None
+        stage = "schema_history"
         with raw.transaction():
             raw.execute("SET LOCAL statement_timeout = '10s'")
             rows = inspect_history(raw, migrations)
             if len(rows) != len(migrations):
                 raise DatabaseUnavailable("DB 마이그레이션 적용이 필요합니다.")
         return PostgresConnection(raw)
-    except Exception:
+    except Exception as error:
+        _log_database_failure(stage, error)
         if raw is not None:
             raw.close()
         raise DatabaseUnavailable("PostgreSQL 연결·마이그레이션 상태를 확인하세요. 로컬 DB로 전환하지 않습니다.") from None

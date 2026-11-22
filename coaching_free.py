@@ -68,3 +68,10 @@ def generate_free_coaching(
             "limitation_ids": decisions["limitation_ids"] + patterns["limitation_ids"],
         }
     return result
+
+
+
+def session_advice(selected, recent, lifestyle, expression):
+    """Compatibility entry point for the versioned, evidence-first engine."""
+    from coaching_session import analyze_session, render_session
+    return render_session(analyze_session(selected, recent, lifestyle), lifestyle, expression)

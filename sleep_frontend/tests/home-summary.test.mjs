@@ -3,6 +3,11 @@ import test from "node:test";
 import {homeSummary} from "../src/lib/home-summary.ts";
 
 const record={start:"2026-11-16T23:00:00+09:00",end:"2026-11-17T07:00:00+09:00",asleep_minutes:451,unrecorded_minutes:0};
+test("marks user-entered time as an estimate instead of presenting it as measured sleep",()=>{
+  const summary=homeSummary({...record,data_type:"manual",estimated_sleep_minutes:450,asleep_minutes:null},"ready");
+  assert.equal(summary.title,"추정 수면은 7시간 30분이에요");
+  assert.match(summary.description,/직접 입력/);
+});
 test("shows the measured duration and recorded local wake date across midnight",()=>{
   const summary=homeSummary(record,"ready");
   assert.equal(summary.title,"최근에 7시간 31분 잤어요");

@@ -14,6 +14,7 @@ type Props = {
   onCoaching: () => void;
   onRetryCoaching: () => void;
   onMorningPlan: () => void;
+  onManualEntry?: () => void;
 };
 
 function coachingExcerpt(text: string) {
@@ -22,19 +23,21 @@ function coachingExcerpt(text: string) {
   return (suggestion?.replace(/^실천 제안\r?\n/, "") ?? paragraphs[0]).trim();
 }
 
-export default function SleepDashboard({record, recordsStatus, coaching, coachingStatus, connection, onRetryRecords, onRecord, onCoaching, onRetryCoaching, onMorningPlan}: Props) {
+export default function SleepDashboard({record, recordsStatus, coaching, coachingStatus, connection, onRetryRecords, onRecord, onCoaching, onRetryCoaching, onMorningPlan, onManualEntry}: Props) {
   const excerpt = coaching ? coachingExcerpt(coaching.coaching) : "";
 
   return <div className="sleep-dashboard">
     {record ? <section className="dashboard-card dashboard-sleep-card" aria-labelledby="dashboard-sleep-title">
-      <header className="dashboard-card-title"><h2 id="dashboard-sleep-title">수면 흐름</h2></header>
+      <header className="dashboard-card-title"><h2 id="dashboard-sleep-title">{record.data_type==="manual"?"직접 입력한 수면 기록":"수면 흐름"}</h2></header>
       <dl className="dashboard-sleep-times">
         <div><dt><Moon size={16} aria-hidden="true"/>취침</dt><dd>{clock(record.start)}</dd></div>
         <div><dt><Sun size={17} aria-hidden="true"/>기상</dt><dd>{clock(record.end)}</dd></div>
       </dl>
-      {(!Number.isFinite(record.asleep_minutes)||record.asleep_minutes<0)&&
-        <p className="dashboard-state">수면 시간을 확인할 정보가 부족해요.</p>}
-      <SleepTimeline key={record.analysis_id} record={record} compact interactive={false}/>
+      {record.data_type==="manual" ? <p className="dashboard-state">입력한 취침·기상 시각으로 추정한 기록이에요.</p> : <>
+        {(!Number.isFinite(record.asleep_minutes)||record.asleep_minutes<0)&&
+          <p className="dashboard-state">수면 시간을 확인할 정보가 부족해요.</p>}
+        <SleepTimeline key={record.analysis_id} record={record} compact interactive={false}/>
+      </>}
       <div className="dashboard-card-actions">
         <button type="button" className="dashboard-link" onClick={onRecord}>수면 기록 자세히 보기<ArrowRight size={16} aria-hidden="true"/></button>
       </div>
@@ -44,6 +47,7 @@ export default function SleepDashboard({record, recordsStatus, coaching, coachin
         <button type="button" className="button secondary" onClick={onRetryRecords}><RotateCcw size={16} aria-hidden="true"/>기록 다시 불러오기</button>
       </div> : connection}
 
+    {onManualEntry&&<button type="button" className="button secondary manual-entry-button" onClick={onManualEntry}>수면 시간 직접 입력</button>}
     {record&&<section className="dashboard-card dashboard-coaching-card" aria-labelledby="dashboard-coaching-title">
       <header className="dashboard-card-heading">
         <div className="dashboard-card-title">

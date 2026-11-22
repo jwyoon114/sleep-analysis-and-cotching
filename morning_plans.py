@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, StrictBool, StringConstraints, model_vali
 
 from app_database import begin_write
 from coaching_patterns import _night_day, _sleep_minutes, _timestamp, _window_minutes
-from health_records import connect, list_sessions
+from health_records import connect, is_manual_sleep, list_sessions
 from sleep_alarms import get_settings
 
 _LOOKBACK = 14
@@ -105,6 +105,8 @@ def recommend_bedtime(account_id, now=None, db_path=None):
     first = today - timedelta(days=_LOOKBACK - 1)
     days = defaultdict(set)
     for record in list_sessions(account_id, db_path):
+        if is_manual_sleep(record):
+            continue
         start, end = _timestamp(record.get("start")), _timestamp(record.get("end"))
         span = _window_minutes(start, end)
         if span is None or end > now:

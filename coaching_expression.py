@@ -19,7 +19,7 @@ def expression_snapshot(preferences):
         "mbti": mbti if isinstance(mbti, str) and re.fullmatch(r"[EI][SN][TF][JP]", mbti) else None,
         "speech": speech if speech in ("polite", "casual") else "polite",
         "intensity": intensity if intensity in ("gentle", "firm", "direct") else "gentle",
-        "allow_profanity": intensity == "direct" and settings.get("allow_profanity") is True,
+        "allow_profanity": intensity in ("gentle", "firm", "direct") and settings.get("allow_profanity") is True,
     }
 
 

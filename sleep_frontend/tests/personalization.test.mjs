@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {changeIntensity, CHARACTER_THEMES, INTENSITY_OPTIONS, SPEECH_OPTIONS} from "../src/lib/personalization.ts";
 
-test("every explicit intensity change starts with profanity disabled", () => {
+test("intensity changes preserve independent explicit consent; defaults stay opt-in", () => {
   for (const {value} of INTENSITY_OPTIONS) {
-    assert.deepEqual(changeIntensity(value), {intensity:value, allow_profanity:false});
+    assert.deepEqual(changeIntensity(value), {intensity:value});
+    for(const allowed of [true,false]) {
+      assert.equal(({allow_profanity:allowed,...changeIntensity(value)}).allow_profanity,allowed);
+    }
   }
 });
 
